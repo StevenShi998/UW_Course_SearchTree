@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>UW Course Prerequisite Tree</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <nav class="topbar">
+    <div class="inner">
+      <div class="brand">UW Course <span>Explorer</span></div>
+      <div class="navlinks">
+        <a href="https://uwflow.com" target="_blank" rel="noreferrer">UW Flow</a>
+      </div>
+    </div>
+  </nav>
+  <header class="container">
+    <h1>UW Course Search Tree</h1>
+    <div class="subtitle-container">
+      <span class="course-chip-example highlight">
+        <span class="weight-badge" style="color: #E1863C;">72</span>
+        <span>STAT 230</span>
+        <span class="grade-badge">60</span>
+      </span>
+      <span class="subtitle">
+        In this example, <span class="weight-badge course-chip-example" style="color: #E1863C;">72</span> is the comprehensive* score (higher the better) based on your Course Path Finder preference, and <span class="grade-badge course-chip-example">60</span> is the minimum grade required. So your STAT 230 score needs to be at least 60% to proceed.
+      </span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="controls">
+      <div class="searchbar" role="search">
+        <div class="search-input">
+          <label for="course-input" class="sr-only">Course ID</label>
+          <input id="course-input" class="input" placeholder="Search course e.g., CS136 or MATH136" autocomplete="off" aria-label="Search courses" />
+          <button id="search-btn" class="btn btn-accent" aria-label="Search">Search</button>
+          <div id="suggestions" class="suggestions" role="listbox" aria-label="Course suggestions"></div>
+        </div>
+        <div class="search-history" id="search-history" aria-label="Recent searches"></div>
+      </div>
+
+    </section>
+
+    <section id="status" class="status" aria-live="polite"></section>
+
+    <section id="results" class="results">
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Prerequisites</h2>
+          <div class="panel-controls">
+            <label class="option">
+              Depth
+              <select id="prereq-depth" class="select">
+                <option value="1">1</option>
+                <option value="2" selected>2</option>
+                <option value="3">3</option>
+                <option value="99">Max</option>
+              </select>
+            </label>
+            <div class="zoom-controls">
+              <button id="prereq-zoom-out-btn" class="btn">-</button>
+              <button id="prereq-zoom-in-btn" class="btn">+</button>
+              <button id="prereq-zoom-reset-btn" class="btn">Reset</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel-subcontrols">
+          <label class="option" for="pref-select">Course Path Finder
+            <select id="pref-select" class="select" aria-label="Weight preference">
+              <option value="balanced">Balanced</option>
+              <option value="liked">Focus on likeness</option>
+              <option value="easy">Focus on easiness</option>
+              <option value="useful">Focus on usefulness</option>
+            </select>
+          </label>
+          <button id="clear-selection-btn" class="btn" aria-label="Clear selection">Clear</button>
+        </div>
+        <div id="prereq-tree" class="tree"></div>
+        <div id="prereq-minimap" class="minimap"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Future courses</h2>
+          <div class="panel-controls">
+            <label class="option">
+              Depth
+              <select id="future-depth" class="select">
+                <option value="1">1</option>
+                <option value="2" selected>2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+            <div class="zoom-controls">
+              <button id="future-zoom-out-btn" class="btn">-</button>
+              <button id="future-zoom-in-btn" class="btn">+</button>
+              <button id="future-zoom-reset-btn" class="btn">Reset</button>
+            </div>
+          </div>
+        </div>
+        <div id="future-tree" class="tree"></div>
+        <div id="future-minimap" class="minimap"></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="container footnote">
+    <small>
+      *The comprehensive score is calculated using a weighted average of course ratings (liked, easy, useful) based on user preference, and adjusted for reliability by the number of ratings.
+    </small>
+    <small>Design and implementation by <a href="https://github.com/StevenShi998" target="_blank" rel="noreferrer">Steven Shi</a> </small>
+  </footer>
+
+  <script src="./pathfinder.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
+
+

@@ -1,0 +1,11 @@
+requests
+beautifulsoup4
+selenium
+webdriver-manager
+tqdm
+mysql-connector-python
+python-dotenv
+fastapi
+uvicorn
+mysql-connector-python
+python-dotenv
