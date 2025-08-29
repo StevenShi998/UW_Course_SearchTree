@@ -27,3 +27,8 @@ ndjson/
 *.csv
 
 note.txt
+# macOS metadata files
+._*
+
+#other files
+other/
