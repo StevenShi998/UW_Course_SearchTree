@@ -4,25 +4,38 @@ from statistics import median
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-import mysql.connector
+import psycopg
+from psycopg_pool import ConnectionPool
 from dotenv import load_dotenv
 
 
-def get_db_connection():
-    host = os.getenv("DB_HOST")
-    port = int(os.getenv("DB_PORT"))
-    user = os.getenv("DB_USER")
-    password = os.getenv("DB_PASSWORD")
-    database = os.getenv("DB_NAME")
-
-    return mysql.connector.connect(
-        host=host,
-        port=port,
-        user=user,
-        password=password,
-        database=database,
-        autocommit=True,
+def _get_dsn() -> str:
+    dsn = (
+        os.getenv("NEON_URL")
+        or os.getenv("NETLIFY_DATABASE_URL")
+        or os.getenv("DATABASE_URL")
     )
+    if not dsn:
+        raise RuntimeError(
+            "Set NEON_URL/NETLIFY_DATABASE_URL/DATABASE_URL to your Postgres connection string"
+        )
+    return dsn
+
+
+# Global connection pool to avoid TLS/connect latency per request
+POOL: ConnectionPool | None = None
+
+
+def init_pool_if_needed():
+    global POOL
+    if POOL is None:
+        POOL = ConnectionPool(conninfo=_get_dsn(), min_size=1, max_size=10)
+
+
+def get_db_connection():
+    init_pool_if_needed()
+    assert POOL is not None
+    return POOL.connection()  # context manager
 
 
 load_dotenv()  # Load .env if present
@@ -40,8 +53,9 @@ app.add_middleware(
 @app.get("/api/health")
 def health():
     try:
-        conn = get_db_connection()
-        conn.close()
+        with get_db_connection() as conn:
+            with conn.cursor() as _cur:
+                _cur.execute("SELECT 1")
         return {"status": "ok"}
     except Exception:
         raise HTTPException(status_code=503, detail="Database connection is not available")
@@ -130,21 +144,17 @@ def fetch_course_metrics_map(cursor, ids: Set[str]) -> Dict[str, Dict]:
 
 
 def fetch_metrics_medians(cursor) -> Dict[str, float]:
-    vals = {"liked": [], "easy": [], "useful": []}
-    cursor.execute("SELECT liked, easy, useful FROM course")
-    for r in cursor.fetchall():
-        if r[0] is not None:
-            vals["liked"].append(float(r[0]))
-        if r[1] is not None:
-            vals["easy"].append(float(r[1]))
-        if r[2] is not None:
-            vals["useful"].append(float(r[2]))
-    def m(arr):
-        try:
-            return float(median(arr)) if arr else 0.0
-        except Exception:
-            return 0.0
-    return {"liked": m(vals["liked"]), "easy": m(vals["easy"]), "useful": m(vals["useful"]) }
+    # Compute medians in-database to avoid transferring entire table
+    cursor.execute(
+        (
+            "SELECT "
+            "  COALESCE((SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY liked) FROM course WHERE liked IS NOT NULL), 0.0) AS liked_med, "
+            "  COALESCE((SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY easy) FROM course WHERE easy IS NOT NULL), 0.0) AS easy_med, "
+            "  COALESCE((SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY useful) FROM course WHERE useful IS NOT NULL), 0.0) AS useful_med "
+        )
+    )
+    row = cursor.fetchone() or (0.0, 0.0, 0.0)
+    return {"liked": float(row[0] or 0.0), "easy": float(row[1] or 0.0), "useful": float(row[2] or 0.0)}
 
 
 def fetch_metrics_min(cursor) -> Dict[str, float]:
@@ -195,8 +205,7 @@ def check_course_exists(cursor, course_id: str) -> bool:
 
 @app.get("/api/course/{course_id}")
 def get_course(course_id: str):
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             course = fetch_course(cur, course_id)
             cur.execute(
@@ -206,32 +215,24 @@ def get_course(course_id: str):
             offerings = [{"term": r[0]} for r in cur.fetchall()]
             course["offerings"] = offerings
             return course
-    finally:
-        conn.close()
 
 
 @app.get("/api/course/{course_id}/prereqs")
 def get_prereqs(course_id: str):
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             groups = fetch_prereq_groups(cur, course_id)
             return {"course_id": course_id, "groups": groups}
-    finally:
-        conn.close()
 
 
 @app.get("/api/course/{course_id}/future")
 def get_future(course_id: str, depth: int = 2):
     if depth < 0 or depth > 6:
         raise HTTPException(400, detail="depth must be between 0 and 6")
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             tree = build_future_tree(cur, course_id, max_depth=depth)
             return {"course_id": course_id, "tree": tree}
-    finally:
-        conn.close()
 
 
 @app.get("/api/course/{course_id}/tree")
@@ -240,8 +241,7 @@ def get_course_tree(course_id: str, prereq_depth: int = 99, future_depth: int = 
         raise HTTPException(400, detail="future_depth must be between 0 and 6")
     if prereq_depth < 1 or prereq_depth > 100:
         raise HTTPException(400, detail="prereq_depth must be between 1 and 100")
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             if not check_course_exists(cur, course_id):
                 raise HTTPException(status_code=404, detail=f"Course '{course_id}' not found")
@@ -272,15 +272,12 @@ def get_course_tree(course_id: str, prereq_depth: int = 99, future_depth: int = 
                 "metrics_median": metrics_median,
                 "metrics_min": metrics_min,
             }
-    finally:
-        conn.close()
 
 
 @app.get("/api/course/{course_id}/prereq_source")
 def get_prereq_source(course_id: str):
     """Return the stored raw prerequisite text and parsed JSON for debugging."""
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT COALESCE(raw_text, ''), COALESCE(logic_json, '{}') FROM course_prereq_text WHERE course_id = %s",
@@ -297,8 +294,6 @@ def get_prereq_source(course_id: str):
             except Exception:
                 parsed = {}
             return {"course_id": course_id, "raw_text": raw_text, "logic_json": parsed}
-    finally:
-        conn.close()
 
 
 @app.get("/api/courses/suggest")
@@ -312,8 +307,7 @@ def suggest_courses(q: str = "", limit: int = 20):
     if len(query) < 2 and not any(ch.isdigit() for ch in query):
         return {"items": []}
 
-    conn = get_db_connection()
-    try:
+    with get_db_connection() as conn:
         with conn.cursor() as cur:
             pfx = f"{query}%"
             anylike = f"%{query}%"
@@ -325,7 +319,7 @@ def suggest_courses(q: str = "", limit: int = 20):
                     "     WHEN UPPER(course_id) LIKE %s THEN 2 "
                     "     WHEN UPPER(course_name) LIKE %s THEN 1 "
                     "     ELSE 0 END AS rank1, "
-                    "LOCATE(%s, UPPER(course_id)) AS pos "
+                    "POSITION(%s IN UPPER(course_id)) AS pos "
                     "FROM course "
                     "WHERE UPPER(course_id) LIKE %s OR UPPER(course_name) LIKE %s "
                     "ORDER BY rank1 DESC, pos, course_id "
@@ -335,7 +329,5 @@ def suggest_courses(q: str = "", limit: int = 20):
             )
             items = [{"course_id": r[0], "course_name": r[1]} for r in cur.fetchall()]
             return {"items": items}
-    finally:
-        conn.close()
 
 
