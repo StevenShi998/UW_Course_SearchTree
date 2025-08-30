@@ -233,7 +233,7 @@
 
   async function loadData(){
     // If API is reachable, prefer it and do not load any local/sample data
-    const apiBase = window.API_BASE || (new URLSearchParams(location.search).get("api")) || "http://localhost:8000";
+    const apiBase = window.API_BASE || (new URLSearchParams(location.search).get("api")) || "";
     try{
       const controller = new AbortController();
       const tid = setTimeout(()=>controller.abort(), 1500);
@@ -1196,7 +1196,7 @@
       return;
     }
     // Debounced backend suggestions
-    const apiBase = window.API_BASE || "http://localhost:8000";
+    const apiBase = window.API_BASE || "";
     if(suggestTimer){ clearTimeout(suggestTimer); }
     suggestTimer = setTimeout(()=>{
       if(suggestAbort){ suggestAbort.abort(); }
@@ -1275,7 +1275,7 @@
     }
 
     // Try API first
-    const apiBase = window.API_BASE || "http://localhost:8000";
+    const apiBase = window.API_BASE || "";
     try{
       // Clear previous drawings while loading
       prereqContainer.innerHTML = "";
