@@ -40,6 +40,20 @@ graph TD
     style J fill:#D5F5E3
 ```
 
+-   **End-to-End User Flow (UI → API → DB → LP Solver → UI)**
+
+```mermaid
+flowchart LR
+  U[User types target course and submits] --> F[Frontend app.js]
+  F -->|/api/course/{id}/tree| A[FastAPI backend]
+  A -->|SQL| DB[(Postgres)]
+  DB --> A
+  A -->|Tree JSON + metrics| F
+  F --> T[Build AND/OR prereq tree]
+  T --> LP[Solve LP to pick optimal subtree]
+  LP --> R[Render trees + highlight chosen path]
+```
+
 -   **Frontend:** A vanilla JavaScript, HTML, and CSS application served statically by **Netlify**. It is responsible for all user interaction and rendering the course trees.
 -   **Backend API:** A Python **FastAPI** application hosted on **Render**. It exposes endpoints to fetch course data, prerequisites, and future paths. It contains all the business logic for tree traversal and pathfinding.
 -   **Database:** A **Postgres** database hosted on **Neon**. It stores all course information, prerequisite relationships, and user ratings scraped from public sources.
@@ -49,14 +63,47 @@ graph TD
 
 For any given target course, its prerequisites can form a complex tree of requirements with AND/OR logic. The primary technical challenge is to navigate this structure to find an "optimal" path for a student. This project frames the challenge as an **optimal directed subtree selection problem**. The goal is to select a subtree, rooted at the target course, that satisfies all logical requirements while maximizing a total "weight" score derived from user preferences and historical course data.
 
-### Methodology: Graph Traversal and Dynamic Programming
+### Methodology: Graph Model + Linear Programming
 
-We model the course structure as a rooted **Directed Acyclic Graph (DAG)**, where nodes are either courses or logical operators (AND/OR). The pathfinding is handled by a recursive algorithm that traverses this graph.
+We model the structure as a rooted **Directed Acyclic Graph (DAG)** with course nodes and junction nodes (AND/OR). The optimal prerequisite set is chosen by solving a small mixed-integer linear program (MILP).
 
--   At **AND-nodes**, all children must be satisfied, so the algorithm explores all branches.
--   At **OR-nodes**, a locally optimal decision is made by selecting the child branch that yields the best score (lowest cost).
+-   At **AND-nodes**, selecting a parent implies all children must be selected.
+-   At **OR-nodes**, selecting a parent implies at least one child must be selected.
 
-This approach effectively treats the course selection challenge as a dynamic programming problem on a tree, which is a generalization of the classic AND/OR pathfinding problem in graphs.
+This yields a compact MILP that modern solvers can solve very quickly for the problem sizes here.
+
+#### LP/MILP Formulation
+
+Let \(V_c\) be course nodes and \(V_j\) be junction nodes (AND/OR). Define binary decision variables for all nodes \(x_v \in \{0,1\}\) indicating whether node \(v\) is chosen in the prerequisite subtree. The target course \(r\) is forced to be selected: \(x_r = 1\).
+
+Objective (minimize total cost of selected courses):
+
+\[\min \sum_{v \in V_c} c_v\, x_v\]
+
+where \(c_v = 1 - w_v/100 + p_v\) combines preference-based weight \(w_v\) and an optional depth-aware penalty \(p_v\) to encourage course reuse.
+
+Constraints encode AND/OR logic:
+
+- AND node \(u\) with children \(C(u)\): for all \(v \in C(u)\), \(x_v \ge x_u\). If an AND is selected, all children must be selected.
+- OR node \(u\) with children \(C(u)\): \(\sum_{v \in C(u)} x_v \ge x_u\). If an OR is selected, at least one child must be selected.
+- Junction-to-course propagation: if a course node has a parent junction \(p\), enforce \(x_{course} \ge x_p\) when that edge exists.
+
+This MILP returns a binary selection over nodes that satisfies all logic and minimizes total cost. The frontend then highlights the selected course nodes as the recommended path.
+
+#### AND/OR Graph Example
+
+```mermaid
+graph LR
+  R[Target Course] --> A((AND))
+  A --> G1((OR Group 1))
+  A --> G2((OR Group 2))
+  G1 --> C1[Course A]
+  G1 --> C2[Course B]
+  G2 --> D1[Course C]
+  G2 --> D2[Course D]
+```
+
+Selecting `R` requires selecting `A`. For the two OR groups under `A`, at least one child is chosen from each group to satisfy the AND.
 
 ### Course Path Finder: The Weighting Algorithm
 
