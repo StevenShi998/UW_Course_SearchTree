@@ -67,7 +67,7 @@
     // already absolute or relative path
     return raw.replace(/\/$/, "");
   }
-  const API_BASE = resolveApiBase();
+  let API_BASE = resolveApiBase();
 
   function isCourseNode(node){ return PathFinder.isCourseNode(node); }
 
@@ -251,18 +251,28 @@
 
   async function loadData(){
     // If API is reachable, prefer it and do not load any local/sample data
-    const apiBase = API_BASE;
-    try{
-      const controller = new AbortController();
-      const tid = setTimeout(()=>controller.abort(), 1500);
-      const ping = await fetch(`${apiBase}/api/health`, { signal: controller.signal });
-      clearTimeout(tid);
-      if(ping.ok){
-        apiAvailable = true;
-        statusEl.textContent = "";
-        return; // use DB-backed API only
-      }
-    }catch(_){ /* fall back to local */ }
+    const candidates = [];
+    if(API_BASE) candidates.push(API_BASE);
+    // Probe common dev endpoints if none provided
+    if(!API_BASE){
+      candidates.push(""); // relative /api when a proxy exists
+      candidates.push("http://127.0.0.1:8000");
+      candidates.push("http://localhost:8000");
+    }
+    for(const base of candidates){
+      try{
+        const controller = new AbortController();
+        const tid = setTimeout(()=>controller.abort(), 1200);
+        const ping = await fetch(`${base}/api/health`, { signal: controller.signal });
+        clearTimeout(tid);
+        if(ping.ok){
+          API_BASE = base; // lock in discovered base
+          apiAvailable = true;
+          statusEl.textContent = "";
+          return; // use DB-backed API only
+        }
+      }catch(_){ /* try next candidate */ }
+    }
     // Try to load local CSVs; otherwise fall back to a tiny built-in sample
     // Expected CSVs (optional): ./courses.csv and ./course_prereq.csv
     // headers:
