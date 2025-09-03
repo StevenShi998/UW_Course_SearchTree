@@ -45,7 +45,7 @@ graph TD
 ```mermaid
 flowchart LR
   U[User types target course and submits] --> F[Frontend app.js]
-  F -->|/api/course/{id}/tree| A[FastAPI backend]
+  F -->|/api/course/:id/tree| A[FastAPI backend]
   A -->|SQL| DB[(Postgres)]
   DB --> A
   A -->|Tree JSON + metrics| F
