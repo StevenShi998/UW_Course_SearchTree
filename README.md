@@ -5,6 +5,7 @@ Interactive UW Prereq Explorer: visualize UW course prerequisite and future-cour
 ## End-to-End User Flow (UI → API → DB → LP Solver → UI)
 
 ```mermaid
+%%{init: {'flowchart': {'nodeSpacing': 60, 'rankSpacing': 80}, 'themeVariables': {'fontSize': '18px'}}}%%
 flowchart LR
   U[User types target course and submits] --> F[Frontend app.js]
   F -->|/api/course/:id/tree| A[FastAPI backend]
