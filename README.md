@@ -36,7 +36,7 @@ Objective (minimize total cost of selected courses):
 
 $$\min \sum_{v \in V_c} c_v\, x_v$$
 
-where $c_v = 1 - w_v/100 + p_v$ combines preference-based weight $w_v$ and an optional depth-aware penalty $p_v$ to encourage course reuse.
+where $c_v = 1 - \frac{w_v}{100} + p_v$ combines preference-based weight $w_v$ and an optional depth-aware penalty $p_v$ to encourage course reuse.
 
 Constraints encode AND/OR logic:
 
@@ -83,7 +83,7 @@ $$ y_i = \lambda_i \cdot (\beta_1 x_{\text{liked}} + \beta_2 x_{\text{easy}} + \
 
 A naive algorithm might select high-weight courses that lead to an inefficient path with many total courses. To solve this, the model introduces a **depth-aware new-course penalty**.
 
--   The "cost" of adding a course to the path is $1 - y_v/100$.
+-   The "cost" of adding a course to the path is $1 - \frac{y_v}{100}$.
 -   If a course is selected for the *first time*, an additional penalty is added. This penalty decreases with the prerequisite's depth, encouraging the reuse of courses that appear in multiple branches (like reusing MATH 138 for both a STAT and a MATH prerequisite).
 
 The algorithm's objective is to find a valid path $P$ that minimizes the total cost, balancing course quality (high weight) with path efficiency (course reuse).
