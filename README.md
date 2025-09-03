@@ -54,7 +54,7 @@ For any given target course, its prerequisites can form a complex tree of requir
 We model the course structure as a rooted **Directed Acyclic Graph (DAG)**, where nodes are either courses or logical operators (AND/OR). The pathfinding is handled by a recursive algorithm that traverses this graph.
 
 -   At **AND-nodes**, all children must be satisfied, so the algorithm explores all branches.
--   At **OR-nodes**, the algorithm selects the child branch that yields the best score (lowest cost), making a locally optimal decision.
+-   At **OR-nodes**, a locally optimal decision is made by selecting the child branch that yields the best score (lowest cost).
 
 This approach effectively treats the course selection challenge as a dynamic programming problem on a tree, which is a generalization of the classic AND/OR pathfinding problem in graphs.
 
@@ -73,8 +73,7 @@ To make the path "optimal," each course is assigned a weight based on historical
 **3. Reliability Scaling:** To account for rating confidence, a scaling factor $\lambda_i$ is applied. Courses with more ratings (e.g., > 100) receive a slight boost ($\lambda_i = 1.1$), while those with few ratings (e.g., < 50) are slightly penalized ($\lambda_i = 0.9$).
 
 **4. Final Node Weight Calculation:** The final weight $y_i$ for a course is a weighted average of its scores, adjusted for reliability:
-
-$$ y_i = \lambda_i \cdot (\beta_1 x_{\mathrm{liked}} + \beta_2 x_{\mathrm{easy}} + \beta_3 x_{\mathrm{useful}}) $$
+\[ y_i = \lambda_i \cdot (\beta_1 x_{\text{liked}} + \beta_2 x_{\text{easy}} + \beta_3 x_{\text{useful}}) \]
 
 ### Global Optimization: Promoting Course Reuse
 
