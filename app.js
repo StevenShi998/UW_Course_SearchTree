@@ -511,6 +511,21 @@
     });
   }
 
+  // Zoom helpers for user controls
+  function setPrereqZoom(z){
+    const minZ = 0.2, maxZ = 3.0;
+    prereqZoom = Math.max(minZ, Math.min(maxZ, z));
+    shouldAutoZoomPrereq = false;
+    if(lastPrereqRoot){ renderPrereqTree(prereqContainer, lastPrereqRoot); }
+  }
+
+  function setFutureZoom(z){
+    const minZ = 0.2, maxZ = 3.0;
+    futureZoom = Math.max(minZ, Math.min(maxZ, z));
+    shouldAutoZoomFuture = false;
+    if(lastFutureRoot){ renderSideTree(futureContainer, lastFutureRoot, true); }
+  }
+
   function renderSideTree(container, root, isFuture){
     const existingSvg = container.querySelector('svg');
     if (existingSvg) existingSvg.remove();
@@ -1441,6 +1456,14 @@
     if(lastPrereqRoot){ renderPrereqTree(prereqContainer, lastPrereqRoot); }
     if(lastFutureRoot){ renderSideTree(futureContainer, lastFutureRoot, true); }
   });
+
+  // Bind zoom buttons
+  if(prereqZoomInBtn){ prereqZoomInBtn.addEventListener('click', ()=> setPrereqZoom(prereqZoom * 1.2)); }
+  if(prereqZoomOutBtn){ prereqZoomOutBtn.addEventListener('click', ()=> setPrereqZoom(prereqZoom / 1.2)); }
+  if(prereqZoomResetBtn){ prereqZoomResetBtn.addEventListener('click', ()=> setPrereqZoom(1.0)); }
+  if(futureZoomInBtn){ futureZoomInBtn.addEventListener('click', ()=> setFutureZoom(futureZoom * 1.2)); }
+  if(futureZoomOutBtn){ futureZoomOutBtn.addEventListener('click', ()=> setFutureZoom(futureZoom / 1.2)); }
+  if(futureZoomResetBtn){ futureZoomResetBtn.addEventListener('click', ()=> setFutureZoom(1.0)); }
 
   if(prefSelect){
     prefSelect.addEventListener('change', ()=>{
