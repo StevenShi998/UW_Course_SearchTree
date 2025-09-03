@@ -40,7 +40,7 @@ where $c_v = 1 - \frac{w_v}{100} + p_v$ combines preference-based weight $w_v$ a
 
 $$ p_v(d) = \frac{\lambda_0}{1 + d} $$
 
-applies only the first time course $v$ is included at depth $d$ ($d=0$ at the root). $\lambda_0$ is a tunable base (default $0.4$ in code).
+applies only the first time course $v$ is included at depth $d$ ($d=0$ at the root). $\lambda_0 \in [0, 1]$ is a tunable base (default $0.5$ in code).
 
 Constraints encode AND/OR logic:
 

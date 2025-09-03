@@ -68,7 +68,7 @@
   }
 
   // p_v(d): depth-aware new-course penalty, applied only the first time a course_id is selected
-  let LAMBDA0 = 0.2; // base λ0; reflected in README as p_v(d) = λ0 / (1 + d)
+  let LAMBDA0 = 0.5; // base λ0; reflected in README as p_v(d) = λ0 / (1 + d)
   function pv(depth){ return LAMBDA0 / (1 + depth); }
 
   function selectSubtree(node, courseMap, selectedIds, depth){
