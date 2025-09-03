@@ -27,8 +27,9 @@ body{
   justify-content:space-between
 }
 .brand{
-  font-weight:700;
-  letter-spacing:.2px
+  font-weight:600;
+  letter-spacing:.2px;
+  font-size:28px
 }
 .brand span{
   color:var(--accent)
@@ -47,7 +48,7 @@ body{
 .uwflow-link {
   font-weight: bold;
   text-decoration: none;
-  font-size: 0.875em;
+  font-size: 0.8em;
 }
 .uwflow-link .uw {
   color: #333;
@@ -65,7 +66,7 @@ header.container{padding-bottom:10px}
 main.container{padding-top:10px}
 h1{
   margin:0 0 4px;
-  font-size:28px
+  font-size:24px
 }
 .subtitle{margin:0;color:var(--muted); font-size: 14px;}
 
