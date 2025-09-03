@@ -1301,6 +1301,8 @@
     const deduped = [];
     for(const it of items){ if(!seen.has(it.code)){ seen.add(it.code); deduped.push(it); } }
     const top = deduped.slice(0, 20);
+    // Preserve current index if still valid; otherwise default to first
+    if(suggestionIndex < 0 || suggestionIndex >= top.length) suggestionIndex = 0;
     suggestionsEl.innerHTML = top.map((it, idx)=>
       `<div class="item${idx===suggestionIndex?" active":""}" role="option" data-code="${it.code}">`+
       `<span class="code">${it.code}</span>`+
@@ -1308,7 +1310,6 @@
       `</div>`
     ).join("");
     suggestionsEl.classList.add("visible");
-    suggestionIndex = 0;
   }
 
   // Simple fuzzy utilities
