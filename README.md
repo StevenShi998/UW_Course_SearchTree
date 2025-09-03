@@ -2,45 +2,7 @@
 
 Interactive UW Prereq Explorer: visualize UW course prerequisite and future-course trees, with search and ratings-weighted path recommendations. This tool helps University of Waterloo students plan their academic path by providing a clear, visual representation of complex course dependencies and suggesting optimal prerequisite pathways based on their personal preferences.
 
-## Website Logic and Architecture
-
-The application is built with a decoupled architecture consisting of a static frontend, a dynamic backend API, and a cloud-based database.
-
-```mermaid
-graph TD
-    subgraph Browser
-        A[User Enters Course & Clicks Search] --> B{app.js};
-        B --> C{Fetches /api/course/...};
-    end
-
-    subgraph Netlify
-        C --> D[Netlify Site];
-        D -- _redirects rule --> E[Proxy Request];
-    end
-
-    subgraph Render
-        E --> F[Uvicorn Server];
-        F --> G{backend/server.py};
-        G -- Connection Pool --> H[Query Database];
-    end
-
-    subgraph Neon
-        H --> I[Postgres Database];
-        I -- Returns Data --> H;
-    end
-
-    H -- Returns JSON --> G;
-    G -- FastAPI Response --> F;
-    F -- JSON Data --> E;
-    E -- Proxied Response --> D;
-    D -- Data --> C;
-    C -- Renders Tree --> J[User Sees Prerequisite Tree];
-
-    style A fill:#D6EAF8
-    style J fill:#D5F5E3
-```
-
--   **End-to-End User Flow (UI → API → DB → LP Solver → UI)**
+## End-to-End User Flow (UI → API → DB → LP Solver → UI)
 
 ```mermaid
 flowchart LR
@@ -53,11 +15,6 @@ flowchart LR
   T --> LP[Solve LP to pick optimal subtree]
   LP --> R[Render trees + highlight chosen path]
 ```
-
--   **Frontend:** A vanilla JavaScript, HTML, and CSS application served statically by **Netlify**. It is responsible for all user interaction and rendering the course trees.
--   **Backend API:** A Python **FastAPI** application hosted on **Render**. It exposes endpoints to fetch course data, prerequisites, and future paths. It contains all the business logic for tree traversal and pathfinding.
--   **Database:** A **Postgres** database hosted on **Neon**. It stores all course information, prerequisite relationships, and user ratings scraped from public sources.
--   **Proxy:** A **Netlify** redirect rule acts as a proxy, forwarding requests from the user's browser for `/api/*` to the backend service on Render. This avoids CORS issues and simplifies frontend configuration.
 
 ## Core Problem: Optimal Course Path Selection
 
