@@ -54,6 +54,21 @@
   let metricsMedian = { liked: 0, easy: 0, useful: 0 };
   let metricsMin = { liked: 0, easy: 0, useful: 0 };
 
+  // Resolve API base from window/API query param with sensible defaults
+  function resolveApiBase(){
+    const raw = (window.API_BASE || new URLSearchParams(location.search).get("api") || "").trim();
+    if(!raw) return "";
+    // support forms like ":8000" → http://localhost:8000
+    if(/^:\d+$/.test(raw)) return `http://localhost${raw}`;
+    // support hostname:port without scheme
+    if(/^[\w.-]+:\d+$/.test(raw)) return `http://${raw}`;
+    // alias
+    if(/^local$/i.test(raw)) return "http://localhost:8000";
+    // already absolute or relative path
+    return raw.replace(/\/$/, "");
+  }
+  const API_BASE = resolveApiBase();
+
   function isCourseNode(node){ return PathFinder.isCourseNode(node); }
 
   function computeSelection(){
@@ -236,7 +251,7 @@
 
   async function loadData(){
     // If API is reachable, prefer it and do not load any local/sample data
-    const apiBase = window.API_BASE || (new URLSearchParams(location.search).get("api")) || "";
+    const apiBase = API_BASE;
     try{
       const controller = new AbortController();
       const tid = setTimeout(()=>controller.abort(), 1500);
@@ -473,6 +488,17 @@
       return { id, children: next.map(n=>expand(n, d+1)) };
     }
     return expand(courseId, 1);
+  }
+
+  function centerTree(container) {
+    if (!container) return;
+    const scrollLeft = (container.scrollWidth - container.clientWidth) / 2;
+    const scrollTop = (container.scrollHeight - container.clientHeight) / 2;
+    container.scroll({
+      top: scrollTop,
+      left: scrollLeft,
+      behavior: 'auto'
+    });
   }
 
   function renderSideTree(container, root, isFuture){
@@ -1199,7 +1225,8 @@
       return;
     }
     // Debounced backend suggestions
-    const apiBase = window.API_BASE || "";
+    if(!apiAvailable) { suggestionsEl.classList.remove("visible"); suggestionsEl.innerHTML = ""; return; }
+    const apiBase = API_BASE;
     if(suggestTimer){ clearTimeout(suggestTimer); }
     suggestTimer = setTimeout(()=>{
       if(suggestAbort){ suggestAbort.abort(); }
@@ -1277,59 +1304,62 @@
       return;
     }
 
-    // Try API first
-    const apiBase = window.API_BASE || "";
-    try{
-      // Clear previous drawings while loading
-      prereqContainer.innerHTML = "";
-      futureContainer.innerHTML = "";
-      lastPrereqRoot = null; lastFutureRoot = null;
-      statusEl.textContent = "Loading...";
+    // Try API only if previously detected as available
+    if(apiAvailable){
+      const apiBase = API_BASE;
+      try{
+        // Clear previous drawings while loading
+        prereqContainer.innerHTML = "";
+        futureContainer.innerHTML = "";
+        lastPrereqRoot = null; lastFutureRoot = null;
+        statusEl.textContent = "Loading...";
 
-      const prereqDepth = prereqDepthSelect.value;
-      const futureDepth = futureDepthSelect.value;
-      
-      const url = `${apiBase}/api/course/${encodeURIComponent(query)}/tree?prereq_depth=${prereqDepth}&future_depth=${futureDepth}`;
-      const res = await fetch(url);
-      if(!res.ok){
-        const body = await res.text().catch(()=>"");
-        console.error("API error", res.status, res.statusText, body);
-        statusEl.textContent = `API error ${res.status} ${res.statusText} for ${query}`;
-        return;
-      }
-      let data = null;
-      try { data = await res.json(); } catch(err) { data = null; console.error("Parse JSON failed:", err); }
-      if(data && data.prereq_tree){
-        const course = data.course || { course_id: query };
-        courseIdToCourse.set(normalizeCode(course.course_id), course);
-        // Merge metrics from backend
-        const metricsMap = data.course_metrics || {};
-        for(const [cid, m] of Object.entries(metricsMap)){
-          const id = normalizeCode(cid);
-          const existing = courseIdToCourse.get(id) || { course_id: id };
-          existing.liked = m && typeof m.liked === 'number' ? m.liked : existing.liked;
-          existing.easy = m && typeof m.easy === 'number' ? m.easy : existing.easy;
-          existing.useful = m && typeof m.useful === 'number' ? m.useful : existing.useful;
-          existing.ratings = m && typeof m.rating_num === 'number' ? m.rating_num : existing.ratings;
-          courseIdToCourse.set(id, existing);
+        const prereqDepth = prereqDepthSelect.value;
+        const futureDepth = futureDepthSelect.value;
+        
+        const url = `${apiBase}/api/course/${encodeURIComponent(query)}/tree?prereq_depth=${prereqDepth}&future_depth=${futureDepth}`;
+        const res = await fetch(url);
+        if(!res.ok){
+          const body = await res.text().catch(()=>"");
+          console.error("API error", res.status, res.statusText, body);
+          statusEl.textContent = `API error ${res.status} ${res.statusText} for ${query}`;
+        } else {
+          let data = null;
+          try { data = await res.json(); } catch(err) { data = null; console.error("Parse JSON failed:", err); }
+          if(data && data.prereq_tree){
+            const course = data.course || { course_id: query };
+            courseIdToCourse.set(normalizeCode(course.course_id), course);
+            // Merge metrics from backend
+            const metricsMap = data.course_metrics || {};
+            for(const [cid, m] of Object.entries(metricsMap)){
+              const id = normalizeCode(cid);
+              const existing = courseIdToCourse.get(id) || { course_id: id };
+              existing.liked = m && typeof m.liked === 'number' ? m.liked : existing.liked;
+              existing.easy = m && typeof m.easy === 'number' ? m.easy : existing.easy;
+              existing.useful = m && typeof m.useful === 'number' ? m.useful : existing.useful;
+              existing.ratings = m && typeof m.rating_num === 'number' ? m.rating_num : existing.ratings;
+              courseIdToCourse.set(id, existing);
+            }
+            metricsMedian = data.metrics_median || metricsMedian;
+            metricsMin = data.metrics_min || metricsMin;
+            lastPrereqRoot = transformApiTreeToRenderableTree(data.prereq_tree);
+            lastFutureRoot = data.future_tree || { id: query, children: [] };
+            updateAllCourseCodesCache();
+            // Compute selection for current preference
+            PathFinder.updateMetrics({ median: metricsMedian, min: metricsMin });
+            PathFinder.setPreference((prefSelect && prefSelect.value) || 'balanced');
+            computeSelection();
+            renderPrereqTree(prereqContainer, lastPrereqRoot);
+            renderSideTree(futureContainer, lastFutureRoot, true);
+            statusEl.textContent = "";
+            return;
+          }
         }
-        metricsMedian = data.metrics_median || metricsMedian;
-        metricsMin = data.metrics_min || metricsMin;
-        lastPrereqRoot = transformApiTreeToRenderableTree(data.prereq_tree);
-        lastFutureRoot = data.future_tree || { id: query, children: [] };
-        updateAllCourseCodesCache();
-        // Compute selection for current preference
-        PathFinder.updateMetrics({ median: metricsMedian, min: metricsMin });
-        PathFinder.setPreference((prefSelect && prefSelect.value) || 'balanced');
-        computeSelection();
-        renderPrereqTree(prereqContainer, lastPrereqRoot);
-        renderSideTree(futureContainer, lastFutureRoot, true);
-        statusEl.textContent = "";
-        return;
+      }catch(e){
+        console.error("Fetch failed:", e);
+        // fall through to local fallback below
       }
-    }catch(e){
-      console.error("Fetch failed:", e);
-      /* fall back */ }
+    }
 
     // API unavailable or not found: try local in-memory data (only if API not available)
     if(!apiAvailable && prereqRows.length){
