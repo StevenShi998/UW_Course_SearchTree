@@ -11,7 +11,9 @@
     <div class="inner">
       <div class="brand">UW Course <span>Explorer</span></div>
       <div class="navlinks">
-        <a href="https://uwflow.com" target="_blank" rel="noreferrer">UW Flow</a>
+        <a href="https://uwflow.com" target="_blank" rel="noreferrer" class="uwflow-link">
+          <span class="uw">UW</span><span class="flow">Flow</span>
+        </a>
       </div>
     </div>
   </nav>
@@ -112,6 +114,24 @@
     </small>
     <small>Design and implementation by <a href="https://github.com/StevenShi998" target="_blank" rel="noreferrer">Steven Shi</a> </small>
   </footer>
+
+  <div class="donation-widget">
+    <button id="donation-btn" class="donation-btn">
+      <img src="https://www.buymeacoffee.com/assets/img/guidelines/logo-mark-3.svg" alt="Buy me a coffee" class="coffee-icon"/>
+    </button>
+  </div>
+
+  <div id="donation-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <button class="modal-close" id="modal-close-btn">&times;</button>
+      <h2>Enjoying this tool?</h2>
+      <p>If you find this course explorer helpful, consider supporting its development and maintenance. Your support helps keep this tool free and up-to-date for everyone.</p>
+      <a href="https://www.buymeacoffee.com/stevenshi" target="_blank" rel="noreferrer" class="bmc-btn">
+        <img src="https://www.buymeacoffee.com/assets/img/guidelines/logo-mark-3.svg" alt="Buy me a coffee" />
+        <span>Buy me a coffee</span>
+      </a>
+    </div>
+  </div>
 
   <script src="./pathfinder.js"></script>
   <script src="./app.js"></script>

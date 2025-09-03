@@ -22,6 +22,9 @@
   const searchHistoryEl = document.getElementById("search-history");
   const prefSelect = document.getElementById("pref-select");
   const clearSelectionBtn = document.getElementById("clear-selection-btn");
+  const donationBtn = document.getElementById("donation-btn");
+  const donationModal = document.getElementById("donation-modal");
+  const modalCloseBtn = document.getElementById("modal-close-btn");
 
   /** Data shapes
    * courses: Map<course_id, { course_id, title?, units? }>
@@ -1429,56 +1432,21 @@
     });
   }
 
-  function centerTree(container) {
-    const scrollWidth = container.scrollWidth;
-    const scrollHeight = container.scrollHeight;
-    const clientWidth = container.clientWidth;
-    const clientHeight = container.clientHeight;
-    container.scrollLeft = (scrollWidth - clientWidth) / 2;
-    container.scrollTop = (scrollHeight - clientHeight) / 2;
+  if (donationBtn && donationModal && modalCloseBtn) {
+    donationBtn.addEventListener('click', () => {
+      donationModal.style.display = 'flex';
+    });
+
+    modalCloseBtn.addEventListener('click', () => {
+      donationModal.style.display = 'none';
+    });
+
+    donationModal.addEventListener('click', (e) => {
+      if (e.target === donationModal) {
+        donationModal.style.display = 'none';
+      }
+    });
   }
-
-  prereqZoomInBtn.addEventListener('click', () => {
-    prereqZoom += 0.2;
-    if(lastPrereqRoot) {
-      renderPrereqTree(prereqContainer, lastPrereqRoot);
-      centerTree(prereqContainer);
-    }
-  });
-  prereqZoomOutBtn.addEventListener('click', () => {
-    prereqZoom = Math.max(0.2, prereqZoom - 0.2);
-    if(lastPrereqRoot) {
-      renderPrereqTree(prereqContainer, lastPrereqRoot);
-      centerTree(prereqContainer);
-    }
-  });
-  prereqZoomResetBtn.addEventListener('click', () => {
-    shouldAutoZoomPrereq = true;
-    if(lastPrereqRoot) {
-      renderPrereqTree(prereqContainer, lastPrereqRoot);
-    }
-  });
-
-  futureZoomInBtn.addEventListener('click', () => {
-    futureZoom += 0.2;
-    if(lastFutureRoot) {
-      renderSideTree(futureContainer, lastFutureRoot, true);
-      centerTree(futureContainer);
-    }
-  });
-  futureZoomOutBtn.addEventListener('click', () => {
-    futureZoom = Math.max(0.2, futureZoom - 0.2);
-    if(lastFutureRoot) {
-      renderSideTree(futureContainer, lastFutureRoot, true);
-      centerTree(futureContainer);
-    }
-  });
-  futureZoomResetBtn.addEventListener('click', () => {
-    shouldAutoZoomFuture = true;
-    if(lastFutureRoot) {
-      renderSideTree(futureContainer, lastFutureRoot, true);
-    }
-  });
 
   window.addEventListener('hashchange', () => {
     const hash = normalizeCode((location.hash || "").replace(/^#/, ""));
