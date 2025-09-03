@@ -25,6 +25,7 @@
   const donationBtn = document.getElementById("donation-btn");
   const donationModal = document.getElementById("donation-modal");
   const modalCloseBtn = document.getElementById("modal-close-btn");
+  const brandBtn = document.getElementById("brand");
 
   /** Data shapes
    * courses: Map<course_id, { course_id, title?, units? }>
@@ -105,6 +106,30 @@
     if(!code) return;
     searchHistory = [code, ...searchHistory.filter(c => c !== code)].slice(0,10);
     saveSearchHistory();
+    renderSearchHistory();
+  }
+
+  function clearAll(){
+    // Reset state and UI
+    currentCourseId = null;
+    lastPrereqRoot = null;
+    lastFutureRoot = null;
+    currentSelection = new Set();
+    courseIdToCourse = new Map();
+    prereqRows = [];
+    statusEl.textContent = "";
+    prereqContainer.innerHTML = "";
+    futureContainer.innerHTML = "";
+    prereqMinimapContainer.classList.remove('visible');
+    futureMinimapContainer.classList.remove('visible');
+    // Clear input and hash
+    if(courseInput) courseInput.value = '';
+    if(location.hash) history.replaceState(null, '', location.pathname + location.search);
+    // Clear suggestions and history
+    suggestionsEl.classList.remove("visible");
+    suggestionsEl.innerHTML = "";
+    searchHistory = [];
+    try{ localStorage.removeItem('uw_search_history'); }catch(_){ }
     renderSearchHistory();
   }
 
@@ -1508,6 +1533,15 @@
       if (e.target === donationModal) {
         donationModal.style.display = 'none';
       }
+    });
+  }
+
+  if(brandBtn){
+    brandBtn.style.cursor = 'pointer';
+    brandBtn.setAttribute('title', 'Reset page');
+    brandBtn.addEventListener('click', (e)=>{
+      e.preventDefault();
+      clearAll();
     });
   }
 
