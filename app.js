@@ -1310,6 +1310,15 @@
       `</div>`
     ).join("");
     suggestionsEl.classList.add("visible");
+    // Ensure only one active item between keyboard and mouse interactions
+    const itemsEls = suggestionsEl.querySelectorAll('.item');
+    itemsEls.forEach((el, idx)=>{
+      el.addEventListener('mouseenter', ()=>{
+        suggestionIndex = idx;
+        itemsEls.forEach(x=>x.classList.remove('active'));
+        el.classList.add('active');
+      });
+    });
   }
 
   // Simple fuzzy utilities
