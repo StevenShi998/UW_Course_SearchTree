@@ -67,9 +67,9 @@
     return Math.min(reliabilityLambda(r) * s, 100);
   }
 
-  // depth-aware new-course penalty: applied only the first time a course_id is selected
-  const NEW_COURSE_PENALTY_BASE = 0.2; // λ0 in the proposal
-  const newCoursePenalty = (d) => NEW_COURSE_PENALTY_BASE / (1 + d);
+  // p_v(d): depth-aware new-course penalty, applied only the first time a course_id is selected
+  let LAMBDA0 = 0.2; // base λ0; reflected in README as p_v(d) = λ0 / (1 + d)
+  function pv(depth){ return LAMBDA0 / (1 + depth); }
 
   function selectSubtree(node, courseMap, selectedIds, depth){
     if(!node) return { cost: 0, selectedDisplay: new Set(), selectedIds: new Set(selectedIds || []) };
@@ -82,7 +82,7 @@
       const isNew = !idsIn.has(node.id);
       // Charge base cost only on first inclusion; reuse adds zero base cost and zero penalty
       const baseCost = isNew ? (1 - (weight / 100)) : 0;
-      const penalty = isNew ? newCoursePenalty(depth) : 0;
+      const penalty = isNew ? pv(depth) : 0;
       let totalCost = baseCost + penalty;
       // display set uses uid/id for highlighting
       const display = new Set([keyOf(node)]);
@@ -142,6 +142,8 @@
     computeSelection,
     isCourseNode,
     getCourseWeight: (id, courseMap) => getCourseWeight(id, courseMap),
+    pv: (d) => pv(d),
+    setPenaltyBase: (lambda0) => { const v = Number(lambda0); if(!isNaN(v) && v >= 0) LAMBDA0 = v; },
   };
 })();
 

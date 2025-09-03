@@ -36,7 +36,11 @@ Objective (minimize total cost of selected courses):
 
 $$\min \sum_{v \in V_c} c_v\, x_v$$
 
-where $c_v = 1 - \frac{w_v}{100} + p_v$ combines preference-based weight $w_v$ and an optional depth-aware penalty $p_v$ to encourage course reuse.
+where $c_v = 1 - \frac{w_v}{100} + p_v$ combines preference-based weight $w_v$ and an optional depth-aware penalty $p_v$ to encourage course reuse. Globally,
+
+$$ p_v(d) = \frac{\lambda_0}{1 + d} $$
+
+applies only the first time course $v$ is included at depth $d$ ($d=0$ at the root). $\lambda_0$ is a tunable base (default $0.4$ in code).
 
 Constraints encode AND/OR logic:
 
