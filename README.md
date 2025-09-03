@@ -2,33 +2,31 @@
 
 Interactive UW Prereq Explorer: visualize UW course prerequisite and future-course trees, with search and ratings-weighted path recommendations. This tool helps University of Waterloo students plan their academic path by providing a clear, visual representation of complex course dependencies and suggesting optimal prerequisite pathways based on their personal preferences.
 
-## End-to-End User Flow (UI → API → DB → LP Solver → UI)
+## User Flow
 
 ```mermaid
 %%{init: {'flowchart': {'nodeSpacing': 80, 'rankSpacing': 120}, 'themeVariables': {'fontSize': '20px'}}}%%
 flowchart TB
   U[User types target course and submits] --> F[Frontend app.js]
-  F -->|/api/course/:id/tree| A[FastAPI backend]
+  F --> A[FastAPI backend]
   A -->|SQL| DB[(Postgres)]
   DB --> A
-  A -->|Tree JSON + metrics| F
+  A --> F
   F --> T[Build AND/OR prereq tree]
   T --> LP[Solve LP to pick optimal subtree]
   LP --> R[Render trees + highlight chosen path]
 ```
 
-## Core Problem: Optimal Course Path Selection
+## Optimal Course Path Selection
 
-For any given target course, its prerequisites can form a complex tree of requirements with AND/OR logic. The primary technical challenge is to navigate this structure to find an "optimal" path for a student. This project frames the challenge as an **optimal directed subtree selection problem**. The goal is to select a subtree, rooted at the target course, that satisfies all logical requirements while maximizing a total "weight" score derived from user preferences and historical course data.
+For any given target course, its prerequisites can form a tree of requirements with AND/OR logic (we processed it with our own parser to convert natural language into a logical format, and this takes LONG time!). Then, the primary challenge is to navigate this structure to find an "optimal" course path for a student. This project frames the challenge as an **optimal directed subtree selection problem**. The goal is to select a subtree, rooted at the target course, that satisfies all logical requirements while maximizing a total "weight" score (how we find it is in the next section) derived from user preferences and historical course data from UWFlow.
 
-### Methodology: Graph Model + Linear Programming
+### Graph Model + Linear Programming
 
-We model the structure as a rooted **Directed Acyclic Graph (DAG)** with course nodes and junction nodes (AND/OR). The optimal prerequisite set is chosen by solving a small mixed-integer linear program (MILP).
+With course nodes and junction nodes (AND/OR). The optimal prerequisite set is chosen by solving a small mixed-integer linear program.
 
 -   At **AND-nodes**, selecting a parent implies all children must be selected.
 -   At **OR-nodes**, selecting a parent implies at least one child must be selected.
-
-This yields a compact MILP that modern solvers can solve very quickly for the problem sizes here.
 
 #### LP/MILP Formulation
 
