@@ -5,8 +5,8 @@ Interactive UW Prereq Explorer: visualize UW course prerequisite and future-cour
 ## End-to-End User Flow (UI → API → DB → LP Solver → UI)
 
 ```mermaid
-%%{init: {'flowchart': {'nodeSpacing': 60, 'rankSpacing': 80}, 'themeVariables': {'fontSize': '18px'}}}%%
-flowchart LR
+%%{init: {'flowchart': {'nodeSpacing': 80, 'rankSpacing': 120}, 'themeVariables': {'fontSize': '20px'}}}%%
+flowchart TB
   U[User types target course and submits] --> F[Frontend app.js]
   F -->|/api/course/:id/tree| A[FastAPI backend]
   A -->|SQL| DB[(Postgres)]
@@ -32,19 +32,19 @@ This yields a compact MILP that modern solvers can solve very quickly for the pr
 
 #### LP/MILP Formulation
 
-Let \(V_c\) be course nodes and \(V_j\) be junction nodes (AND/OR). Define binary decision variables for all nodes \(x_v \in \{0,1\}\) indicating whether node \(v\) is chosen in the prerequisite subtree. The target course \(r\) is forced to be selected: \(x_r = 1\).
+Let $V_c$ be course nodes and $V_j$ be junction nodes (AND/OR). Define binary decision variables for all nodes $x_v \in \{0,1\}$ indicating whether node $v$ is chosen in the prerequisite subtree. The target course $r$ is forced to be selected: $x_r = 1$.
 
 Objective (minimize total cost of selected courses):
 
-\[\min \sum_{v \in V_c} c_v\, x_v\]
+$$\min \sum_{v \in V_c} c_v\, x_v$$
 
-where \(c_v = 1 - w_v/100 + p_v\) combines preference-based weight \(w_v\) and an optional depth-aware penalty \(p_v\) to encourage course reuse.
+where $c_v = 1 - w_v/100 + p_v$ combines preference-based weight $w_v$ and an optional depth-aware penalty $p_v$ to encourage course reuse.
 
 Constraints encode AND/OR logic:
 
-- AND node \(u\) with children \(C(u)\): for all \(v \in C(u)\), \(x_v \ge x_u\). If an AND is selected, all children must be selected.
-- OR node \(u\) with children \(C(u)\): \(\sum_{v \in C(u)} x_v \ge x_u\). If an OR is selected, at least one child must be selected.
-- Junction-to-course propagation: if a course node has a parent junction \(p\), enforce \(x_{course} \ge x_p\) when that edge exists.
+- AND node $u$ with children $C(u)$: for all $v \in C(u)$, $x_v \ge x_u$. If an AND is selected, all children must be selected.
+- OR node $u$ with children $C(u)$: $\sum_{v \in C(u)} x_v \ge x_u$. If an OR is selected, at least one child must be selected.
+- Junction-to-course propagation: if a course node has a parent junction $p$, enforce $x_{course} \ge x_p$ when that edge exists.
 
 This MILP returns a binary selection over nodes that satisfies all logic and minimizes total cost. The frontend then highlights the selected course nodes as the recommended path.
 
