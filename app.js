@@ -526,14 +526,12 @@
   }
 
   function centerTree(container) {
-    if (!container) return;
-    const scrollLeft = (container.scrollWidth - container.clientWidth) / 2;
-    const scrollTop = (container.scrollHeight - container.clientHeight) / 2;
-    container.scroll({
-      top: scrollTop,
-      left: scrollLeft,
-      behavior: 'auto'
-    });
+    const scrollWidth = container.scrollWidth;
+    const scrollHeight = container.scrollHeight;
+    const clientWidth = container.clientWidth;
+    const clientHeight = container.clientHeight;
+    container.scrollLeft = (scrollWidth - clientWidth) / 2;
+    container.scrollTop = (scrollHeight - clientHeight) / 2;
   }
 
   // Zoom helpers for user controls
@@ -552,6 +550,10 @@
   }
 
   function renderSideTree(container, root, isFuture){
+    const { scrollLeft, scrollTop, scrollWidth, clientWidth, scrollHeight, clientHeight } = container;
+    const xRatio = scrollWidth > clientWidth ? scrollLeft / (scrollWidth - clientWidth) : 0;
+    const yRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+
     const existingSvg = container.querySelector('svg');
     if (existingSvg) existingSvg.remove();
     const { svg, g } = makeSVG(container);
@@ -748,10 +750,17 @@
     setupMinimap(container, svg, { contentWidth: baseViewBoxWidth, contentHeight: baseViewBoxHeight, zoom: isFuture ? futureZoom : prereqZoom });
     if (didAutoZoomFuture) {
       centerTree(container);
+    } else {
+      container.scrollLeft = (container.scrollWidth - container.clientWidth) * xRatio;
+      container.scrollTop = (container.scrollHeight - container.clientHeight) * yRatio;
     }
   }
 
   function renderPrereqTree(container, root){
+    const { scrollLeft, scrollTop, scrollWidth, clientWidth, scrollHeight, clientHeight } = container;
+    const xRatio = scrollWidth > clientWidth ? scrollLeft / (scrollWidth - clientWidth) : 0;
+    const yRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+
     const existingSvg = container.querySelector('svg');
     if (existingSvg) existingSvg.remove();
     const { svg, g } = makeSVG(container);
@@ -1112,6 +1121,9 @@
     setupMinimap(container, svg, { contentWidth: baseViewBoxWidth, contentHeight: baseViewBoxHeight });
     if (didAutoZoomPrereq) {
       centerTree(container);
+    } else {
+      container.scrollLeft = (container.scrollWidth - container.clientWidth) * xRatio;
+      container.scrollTop = (container.scrollHeight - container.clientHeight) * yRatio;
     }
   }
 
@@ -1491,14 +1503,6 @@
     if(lastPrereqRoot){ renderPrereqTree(prereqContainer, lastPrereqRoot); }
     if(lastFutureRoot){ renderSideTree(futureContainer, lastFutureRoot, true); }
   });
-
-  // Bind zoom buttons
-  if(prereqZoomInBtn){ prereqZoomInBtn.addEventListener('click', ()=> setPrereqZoom(prereqZoom * 1.2)); }
-  if(prereqZoomOutBtn){ prereqZoomOutBtn.addEventListener('click', ()=> setPrereqZoom(prereqZoom / 1.2)); }
-  if(prereqZoomResetBtn){ prereqZoomResetBtn.addEventListener('click', ()=> setPrereqZoom(1.0)); }
-  if(futureZoomInBtn){ futureZoomInBtn.addEventListener('click', ()=> setFutureZoom(futureZoom * 1.2)); }
-  if(futureZoomOutBtn){ futureZoomOutBtn.addEventListener('click', ()=> setFutureZoom(futureZoom / 1.2)); }
-  if(futureZoomResetBtn){ futureZoomResetBtn.addEventListener('click', ()=> setFutureZoom(1.0)); }
 
   if(prefSelect){
     prefSelect.addEventListener('change', ()=>{
