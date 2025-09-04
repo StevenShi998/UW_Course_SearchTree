@@ -1,6 +1,8 @@
 import os
 from typing import Dict, List, Tuple, Set
 from statistics import median
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import logging
 
 from fastapi import FastAPI, HTTPException, Request
@@ -58,8 +60,13 @@ async def log_requests(request: Request, call_next):
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO visitor_log (ip_address, path, user_agent) VALUES (%s, %s, %s)",
-                (request.client.host, request.url.path, request.headers.get('user-agent'))
+                "INSERT INTO visitor_log (ip_address, path, user_agent, visited_at) VALUES (%s, %s, %s, %s)",
+                (
+                    request.client.host,
+                    request.url.path,
+                    request.headers.get("user-agent"),
+                    datetime.now(ZoneInfo("America/Toronto")),
+                ),
             )
     # logging.info(f"Visitor from {request.client.host} for {request.url.path}")
     response = await call_next(request)
@@ -151,7 +158,7 @@ def build_prereq_tree(cursor, root_id: str, *, max_depth: int = 99) -> Dict:
 def fetch_course_metrics_map(cursor, ids: Set[str]) -> Dict[str, Dict]:
     if not ids:
         return {}
-    # MySQL requires placeholders list of the right length
+    # SQL requires placeholders list of the right length
     placeholders = ",".join(["%s"] * len(ids))
     cursor.execute(
         f"SELECT course_id, liked, easy, useful, rating_num FROM course WHERE course_id IN ({placeholders})",
