@@ -1518,10 +1518,16 @@
   // Bind zoom buttons
   if(prereqZoomInBtn){ prereqZoomInBtn.addEventListener('click', ()=> setPrereqZoom(prereqZoom * 1.2)); }
   if(prereqZoomOutBtn){ prereqZoomOutBtn.addEventListener('click', ()=> setPrereqZoom(prereqZoom / 1.2)); }
-  if(prereqZoomResetBtn){ prereqZoomResetBtn.addEventListener('click', ()=> setPrereqZoom(1.0)); }
+  if(prereqZoomResetBtn){ prereqZoomResetBtn.addEventListener('click', ()=> {
+    shouldAutoZoomPrereq = true;
+    if(lastPrereqRoot) renderPrereqTree(prereqContainer, lastPrereqRoot);
+  }); }
   if(futureZoomInBtn){ futureZoomInBtn.addEventListener('click', ()=> setFutureZoom(futureZoom * 1.2)); }
   if(futureZoomOutBtn){ futureZoomOutBtn.addEventListener('click', ()=> setFutureZoom(futureZoom / 1.2)); }
-  if(futureZoomResetBtn){ futureZoomResetBtn.addEventListener('click', ()=> setFutureZoom(1.0)); }
+  if(futureZoomResetBtn){ futureZoomResetBtn.addEventListener('click', ()=> {
+    shouldAutoZoomFuture = true;
+    if(lastFutureRoot) renderSideTree(futureContainer, lastFutureRoot, true);
+  }); }
 
   if(prefSelect){
     prefSelect.addEventListener('change', ()=>{
