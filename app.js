@@ -1518,6 +1518,7 @@
   // Bind zoom buttons
   if(prereqZoomInBtn){ prereqZoomInBtn.addEventListener('click', ()=> setPrereqZoom(prereqZoom * 1.2)); }
   if(prereqZoomOutBtn){ prereqZoomOutBtn.addEventListener('click', ()=> setPrereqZoom(prereqZoom / 1.2)); }
+  //set reset to default
   if(prereqZoomResetBtn){ prereqZoomResetBtn.addEventListener('click', ()=> {
     shouldAutoZoomPrereq = true;
     if(lastPrereqRoot) renderPrereqTree(prereqContainer, lastPrereqRoot);
