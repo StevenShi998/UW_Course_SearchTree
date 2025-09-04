@@ -737,13 +737,11 @@
     }
 
     const zoom = futureZoom;
-    // Zoom by shrinking the viewBox so content appears larger, without
-    // fighting CSS rules that set svg { width:100%; height:auto }
-    const viewBoxWidthF = baseViewBoxWidth / zoom;
-    const viewBoxHeightF = baseViewBoxHeight / zoom;
-    const viewBoxXF = (baseViewBoxWidth - viewBoxWidthF) / 2;
-    const viewBoxYF = (baseViewBoxHeight - viewBoxHeightF) / 2;
-    svg.setAttribute("viewBox", `${viewBoxXF} ${viewBoxYF} ${viewBoxWidthF} ${viewBoxHeightF}`);
+    // Keep a fixed viewBox and scale the rendered size via inline styles so
+    // the scrollbars reflect content zoom proportionally in both directions.
+    svg.setAttribute("viewBox", `0 0 ${baseViewBoxWidth} ${baseViewBoxHeight}`);
+    svg.style.width = `${baseViewBoxWidth * zoom}px`;
+    svg.style.height = `${baseViewBoxHeight * zoom}px`;
 
     // Translate to remove left margin and let preserveAspectRatio center the result
     g.setAttribute("transform", `translate(${baseTranslateX},0)`);
@@ -1114,13 +1112,9 @@
       }
     }
     const zoom = prereqZoom;
-    // Zoom by shrinking the viewBox so content appears larger, while
-    // keeping CSS width:100% unaffected
-    const viewBoxWidthP = baseViewBoxWidth / zoom;
-    const viewBoxHeightP = baseViewBoxHeight / zoom;
-    const viewBoxXP = (baseViewBoxWidth - viewBoxWidthP) / 2;
-    const viewBoxYP = (baseViewBoxHeight - viewBoxHeightP) / 2;
-    svg.setAttribute("viewBox", `${viewBoxXP} ${viewBoxYP} ${viewBoxWidthP} ${viewBoxHeightP}`);
+    svg.setAttribute("viewBox", `0 0 ${baseViewBoxWidth} ${baseViewBoxHeight}`);
+    svg.style.width = `${baseViewBoxWidth * zoom}px`;
+    svg.style.height = `${baseViewBoxHeight * zoom}px`;
     g.setAttribute("transform", `translate(${baseTranslateX + padding},0)`);
 
     setupMinimap(container, svg, { contentWidth: baseViewBoxWidth, contentHeight: baseViewBoxHeight });
