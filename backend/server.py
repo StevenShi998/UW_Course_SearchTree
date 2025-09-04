@@ -1,8 +1,9 @@
 import os
 from typing import Dict, List, Tuple, Set
 from statistics import median
+import logging
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg
 from psycopg_pool import ConnectionPool
@@ -20,6 +21,15 @@ def _get_dsn() -> str:
             "Set NEON_URL/NETLIFY_DATABASE_URL/DATABASE_URL to your Postgres connection string"
         )
     return dsn
+
+
+# Setup logging
+# logging.basicConfig(
+#     filename='backend/visitor.log',
+#     level=logging.INFO,
+#     format='%(asctime)s - %(message)s',
+#     datefmt='%Y-%m-%d %H:%M:%S',
+# )
 
 
 # Global connection pool to avoid TLS/connect latency per request
@@ -41,6 +51,21 @@ def get_db_connection():
 load_dotenv()  # Load .env if present
 
 app = FastAPI(title="UW Course API", version="0.1.0")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO visitor_log (ip_address, path, user_agent) VALUES (%s, %s, %s)",
+                (request.client.host, request.url.path, request.headers.get('user-agent'))
+            )
+    # logging.info(f"Visitor from {request.client.host} for {request.url.path}")
+    response = await call_next(request)
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
