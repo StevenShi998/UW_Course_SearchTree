@@ -536,14 +536,14 @@
 
   // Zoom helpers for user controls
   function setPrereqZoom(z){
-    const minZ = 0.2, maxZ = 3.0;
+    const minZ = 0.2, maxZ = 1.0; // cap so tree width never exceeds canvas width
     prereqZoom = Math.max(minZ, Math.min(maxZ, z));
     shouldAutoZoomPrereq = false;
     if(lastPrereqRoot){ renderPrereqTree(prereqContainer, lastPrereqRoot); }
   }
 
   function setFutureZoom(z){
-    const minZ = 0.2, maxZ = 3.0;
+    const minZ = 0.2, maxZ = 1.0; // cap zoom-in to avoid overflow
     futureZoom = Math.max(minZ, Math.min(maxZ, z));
     shouldAutoZoomFuture = false;
     if(lastFutureRoot){ renderSideTree(futureContainer, lastFutureRoot, true); }
