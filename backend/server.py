@@ -65,7 +65,7 @@ async def log_requests(request: Request, call_next):
                     request.client.host,
                     request.url.path,
                     request.headers.get("user-agent"),
-                    datetime.now(ZoneInfo("America/Toronto")),
+                    datetime.now(ZoneInfo("America/Toronto")).replace(tzinfo=None),
                 ),
             )
     # logging.info(f"Visitor from {request.client.host} for {request.url.path}")

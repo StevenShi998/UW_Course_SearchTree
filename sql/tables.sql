@@ -39,5 +39,5 @@ CREATE TABLE IF NOT EXISTS visitor_log (
   ip_address       VARCHAR(45),
   path             TEXT,
   user_agent       TEXT,
-  visited_at       TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+  visited_at       TIMESTAMP WITHOUT TIME ZONE
 );
