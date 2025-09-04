@@ -736,24 +736,29 @@
       }
     }
 
-    const viewBoxWidth = baseViewBoxWidth / futureZoom;
-    const viewBoxHeight = baseViewBoxHeight / futureZoom;
-    const viewBoxX = (baseViewBoxWidth - viewBoxWidth) / 2;
-    const viewBoxY = (baseViewBoxHeight - viewBoxHeight) / 2;
-    svg.setAttribute("viewBox", `${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`);
-    // Also set inline height so it displays even without a viewBox-aware layout
-    svg.style.height = `${elementPixelHeightFuture}px`;
+    const zoom = futureZoom;
+    // Zoom by shrinking the viewBox so content appears larger, without
+    // fighting CSS rules that set svg { width:100%; height:auto }
+    const viewBoxWidthF = baseViewBoxWidth / zoom;
+    const viewBoxHeightF = baseViewBoxHeight / zoom;
+    const viewBoxXF = (baseViewBoxWidth - viewBoxWidthF) / 2;
+    const viewBoxYF = (baseViewBoxHeight - viewBoxHeightF) / 2;
+    svg.setAttribute("viewBox", `${viewBoxXF} ${viewBoxYF} ${viewBoxWidthF} ${viewBoxHeightF}`);
 
     // Translate to remove left margin and let preserveAspectRatio center the result
     g.setAttribute("transform", `translate(${baseTranslateX},0)`);
 
     setupMinimap(container, svg, { contentWidth: baseViewBoxWidth, contentHeight: baseViewBoxHeight, zoom: isFuture ? futureZoom : prereqZoom });
-    if (didAutoZoomFuture) {
-      centerTree(container);
-    } else {
-      container.scrollLeft = (container.scrollWidth - container.clientWidth) * xRatio;
-      container.scrollTop = (container.scrollHeight - container.clientHeight) * yRatio;
-    }
+    
+    // Defer scroll restoration to allow browser to update layout
+    requestAnimationFrame(()=>{
+      if (didAutoZoomFuture) {
+        centerTree(container);
+      } else {
+        container.scrollLeft = (container.scrollWidth - container.clientWidth) * xRatio;
+        container.scrollTop = (container.scrollHeight - container.clientHeight) * yRatio;
+      }
+    });
   }
 
   function renderPrereqTree(container, root){
@@ -1109,22 +1114,26 @@
       }
     }
     const zoom = prereqZoom;
-    const viewBoxWidth = baseViewBoxWidth / zoom;
-    const viewBoxHeight = baseViewBoxHeight / zoom;
-    const viewBoxX = (baseViewBoxWidth - viewBoxWidth) / 2;
-    const viewBoxY = (baseViewBoxHeight - viewBoxHeight) / 2;
-
-    svg.setAttribute("viewBox", `${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`);
-    svg.style.height = `${elementPixelHeightPrereq}px`;
+    // Zoom by shrinking the viewBox so content appears larger, while
+    // keeping CSS width:100% unaffected
+    const viewBoxWidthP = baseViewBoxWidth / zoom;
+    const viewBoxHeightP = baseViewBoxHeight / zoom;
+    const viewBoxXP = (baseViewBoxWidth - viewBoxWidthP) / 2;
+    const viewBoxYP = (baseViewBoxHeight - viewBoxHeightP) / 2;
+    svg.setAttribute("viewBox", `${viewBoxXP} ${viewBoxYP} ${viewBoxWidthP} ${viewBoxHeightP}`);
     g.setAttribute("transform", `translate(${baseTranslateX + padding},0)`);
 
     setupMinimap(container, svg, { contentWidth: baseViewBoxWidth, contentHeight: baseViewBoxHeight });
-    if (didAutoZoomPrereq) {
-      centerTree(container);
-    } else {
-      container.scrollLeft = (container.scrollWidth - container.clientWidth) * xRatio;
-      container.scrollTop = (container.scrollHeight - container.clientHeight) * yRatio;
-    }
+    
+    // Defer scroll restoration to allow browser to update layout
+    requestAnimationFrame(()=>{
+        if (didAutoZoomPrereq) {
+          centerTree(container);
+        } else {
+          container.scrollLeft = (container.scrollWidth - container.clientWidth) * xRatio;
+          container.scrollTop = (container.scrollHeight - container.clientHeight) * yRatio;
+        }
+    });
   }
 
   function makeSVG(container){
