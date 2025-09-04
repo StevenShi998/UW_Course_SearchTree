@@ -21,14 +21,19 @@ flowchart TB
 
 For any given target course, its prerequisites can form a tree of requirements with AND/OR logic (we processed it with our own parser to convert natural language into a logical format, and this takes LONG time!). Then, the primary challenge is to navigate this structure to find an "optimal" course path for a student. This project frames the challenge as an **optimal directed subtree selection problem**. The goal is to select a subtree, rooted at the target course, that satisfies all logical requirements while maximizing a total "weight" score (how we find it is in the next section) derived from user preferences and historical course data from UWFlow.
 
-### Graph Model + Linear Programming
+### Methodology: Heuristic-Guided Greedy Traversal
 
-With course nodes and junction nodes (AND/OR). The optimal prerequisite set is chosen by solving a small mixed-integer linear program.
+We model the structure as a rooted **Directed Acyclic Graph (DAG)** with course nodes and junction nodes (AND/OR). The optimal prerequisite path is found using a greedy recursive traversal that makes locally optimal choices.
 
--   At **AND-nodes**, selecting a parent implies all children must be selected.
--   At **OR-nodes**, selecting a parent implies at least one child must be selected.
+-   At **OR-nodes**, it selects the child branch with the lowest total cost (i.e., the highest-rated and most efficient path).
+-   At **AND-nodes**, all child branches must be satisfied. A simple sequential traversal can lead to suboptimal choices due to its arbitrary processing order. To mitigate this, we use a heuristic:
+    1.  First, the algorithm performs a "dry run" to calculate the standalone cost of satisfying each child branch.
+    2.  It then sorts the branches from most expensive to least expensive.
+    3.  Finally, it traverses the branches in this sorted order, accumulating selected courses. This allows cheaper branches to benefit from course reuse opportunities created by the more complex branches.
 
-#### LP/MILP Formulation
+While the theoretical optimum can be described by a linear program, this heuristic-guided greedy approach provides a fast and effective solution that finds more efficient and intuitive course paths.
+
+#### LP/MILP Formulation (Theoretical Model)
 
 Let $V_c$ be course nodes and $V_j$ be junction nodes (AND/OR). Define binary decision variables for all nodes $x_v \in \{0,1\}$ indicating whether node $v$ is chosen in the prerequisite subtree. The target course $r$ is forced to be selected: $x_r = 1$.
 

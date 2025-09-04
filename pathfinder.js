@@ -68,7 +68,7 @@
   }
 
   // p_v(d): depth-aware new-course penalty, applied only the first time a course_id is selected
-  let LAMBDA0 = 0.5; // base λ0; reflected in README as p_v(d) = λ0 / (1 + d)
+  let LAMBDA0 = 1; // base λ0; reflected in README as p_v(d) = λ0 / (1 + d)
   function pv(depth){ return LAMBDA0 / (1 + depth); }
 
   function selectSubtree(node, courseMap, selectedIds, depth){
@@ -99,10 +99,22 @@
 
     // AND node
     if(isAndNode(node)){
-      let totalCost = 0; const display = new Set();
+      let totalCost = 0; 
+      const display = new Set();
       let ids = new Set(selectedIds || []);
-      for(const c of children){
-        const res = selectSubtree(c, courseMap, ids, depth + 1);
+
+      // Heuristic: process more "expensive" branches first. This allows cheaper branches
+      // to benefit from course reuse. We do a dry run to get costs, sort by cost descending,
+      // then do the real run in that order.
+      const childrenWithCosts = children.map(c => ({
+        child: c,
+        cost: selectSubtree(c, courseMap, ids, depth + 1).cost,
+      }));
+
+      childrenWithCosts.sort((a, b) => b.cost - a.cost);
+
+      for (const item of childrenWithCosts) {
+        const res = selectSubtree(item.child, courseMap, ids, depth + 1);
         totalCost += res.cost;
         for(const k of res.selectedDisplay) display.add(k);
         ids = res.selectedIds;

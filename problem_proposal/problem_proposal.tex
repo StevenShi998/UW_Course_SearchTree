@@ -1,0 +1,248 @@
+\documentclass[11pt]{article}
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\setlength{\parindent}{0pt}
+
+\title{Technical Framework for Subtree Selection and Node Weighting in Automated Prerequisite Course Planning}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+For a given target course, prerequisites can be represented as a complex tree of requirements. The primary objective of this work is to define a technical framework for navigating this structure to find an optimal path for the student.
+
+Specifically, given a prerequisite tree, the goal is to select an optimal directed subtree rooted at the target course. This subtree must satisfy all logical requirements (i.e., AND/OR conditions). The selection process is guided by a weighting system that reflects course quality and user preferences, aiming to maximize the total weight of the selected courses while promoting course reuse to ensure an efficient academic path.
+
+\section{Methodology}
+
+\subsection{Prerequisite Graph Model}
+
+We model the prerequisite structure as a rooted Directed Acyclic Graph (DAG), denoted $G = (V, E)$, with the following properties:
+\begin{itemize}
+    \item The vertex set $V$ consists of two types of nodes:
+    \begin{itemize}
+        \item \textbf{Course nodes}, which represent atomic courses, possibly with a minimum grade requirement.
+        \item \textbf{Logic nodes}, which represent either an AND ($\land$) or OR ($\lor$) condition over their children.
+    \end{itemize}
+    \item The root of the DAG is the target course for which the prerequisite path is being planned.
+    \item Edges in $E$ represent dependencies, connecting parent nodes to their required sub-requirements (children).
+\end{itemize}
+
+\subsection{Optimal Subtree Selection}
+
+The core of the methodology is a recursive function, $\mathsf{SelectSubtree}(T, S)$, designed to traverse the graph and identify the optimal set of courses. Here, $T$ is the current node (either course or logic) under consideration, and $S$ is the set of courses already selected, which is used to handle dependencies and prevent duplicates. The function is detailed in Algorithm \ref{alg:selection}.
+
+A key implementation detail concerns AND-nodes. A naive traversal of an AND-node's children in an arbitrary order can lead to suboptimal path selection, as the choices made for one branch are not informed by the needs of subsequent branches. To mitigate this, a heuristic is employed: the algorithm first performs a ``dry run'' to estimate the selection cost for each child branch. It then processes the children in descending order of cost. This ensures that more complex or costly requirements are satisfied first, maximizing the potential for simpler branches to reuse already-selected courses.
+
+\begin{algorithm}[H]
+\caption{Optimal Subtree Selection for Prerequisite Satisfaction}
+\label{alg:selection}
+\begin{algorithmic}[1]
+\Function{SelectSubtree}{$T$, $S$}
+    \If{$T$ is a course node}
+        \If{$T \notin S$}
+            \State $P \gets \{T\}$
+            \State $S \gets S \cup \{T\}$
+            \ForAll{prerequisite $Q$ of $T$}
+                \State $P \gets P \cup$ \Call{SelectSubtree}{$Q$, $S$}
+            \EndFor
+            \State\Return $P$
+        \Else
+            \State\Return $\emptyset$
+        \EndIf
+    \ElsIf{$T$ is an AND-node}
+        \State $P \gets \emptyset$
+        \ForAll{child $C$ of $T$}
+            \State $P \gets P \cup$ \Call{SelectSubtree}{$C$, $S$}
+        \EndFor
+        \State\Return $P$
+    \ElsIf{$T$ is an OR-node}
+        \State $P^* \gets \text{argmin}_P\, \mathrm{Cost}(P)$ over all $P = \Call{SelectSubtree}{C, S}$ for children $C$ of $T$
+        \State\Return $P^*$
+    \EndIf
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+The cost function, $\mathrm{Cost}(P)$, used at OR-nodes, is initially defined as the negative sum of weights of the courses in a potential path $P$: $\sum_{v \in P} -y_v$. This serves to maximize the total path weight. This function is expanded in Section \ref{sec:reuse-penalty}.
+
+\subsection{Algorithmic Properties}
+\begin{itemize}
+    \item \textbf{Feasibility}: The algorithm guarantees a feasible path by only omitting courses that are already in the selected set $S$, ensuring that all dependencies are met.
+    \item \textbf{Optimality at OR-nodes}: At each OR-node, the branch that yields the optimal cost (e.g., maximum weight, minimum courses) is chosen based on the defined cost function.
+    \item \textbf{Completeness at AND-nodes}: At each AND-node, all branches are traversed, and their resulting course sets are unified to ensure all requirements are satisfied.
+    \item \textbf{Theoretical Basis}: This approach frames course selection as a dynamic programming problem on a tree, which can be seen as a generalization of the AND/OR pathfinding problem in graphs.
+\end{itemize}
+
+\section{Node Weighting Algorithm}
+
+Each course node is assigned a weight $y_i$ to quantify its desirability based on historical student feedback and user-specified preferences.
+
+\subsection{Parameters}
+
+For each course $i$, we define the following parameters:
+\begin{align*}
+    x_1 &: \text{liked score } [0, 100]\\
+    x_2 &: \text{easy score } [0, 100]\\
+    x_3 &: \text{useful score } [0, 100]\\
+    r_i &: \text{number of student ratings}
+\end{align*}
+User preferences are captured by a weight vector $\boldsymbol{\beta} = (\beta_1, \beta_2, \beta_3)$, where $\beta_k \geq 0$ and $\sum_k \beta_k = 1$. Predefined profiles for $\boldsymbol{\beta}$ include:
+\begin{itemize}
+    \item \textbf{Focus on likeness}: $(0.7, 0.15, 0.15)$
+    \item \textbf{Focus on easiness}: $(0.15, 0.7, 0.15)$
+    \item \textbf{Focus on usefulness}: $(0.15, 0.15, 0.7)$
+    \item \textbf{Balanced}: $(0.4, 0.3, 0.3)$
+\end{itemize}
+
+\subsection{Reliability Scaling Factor}
+
+To account for the confidence in course ratings, a reliability scaling factor, $\lambda_i$, is introduced, which is monotonic in the number of ratings $r_i$. It can be defined using discrete thresholds:
+\[
+    \lambda_i =
+    \begin{cases}
+        1.10 & \text{if } r_i > 100 \\
+        1.00 & \text{if } 50 \leq r_i \leq 100 \\
+        0.9 & \text{if } r_i < 50
+    \end{cases}
+\]
+Alternatively, a continuous scaling function can be used for finer-grained adjustments:
+\[
+    \lambda_i = 1 + \alpha \cdot \left( \frac{r_i - \bar{r}}{\sigma_r} \right),\qquad \text{clamped to } [0.95, 1.05]
+\]
+where $\bar{r} = 32.8743$ and $\sigma_r = 67.55$ are the mean and standard deviation of ratings across all courses, and $\alpha \approx 0.15$ is a small constant.
+
+\subsection{Null Value Handling}
+
+Missing rating values ($x_1, x_2, x_3$) are handled as follows:
+\begin{itemize}
+    \item If \textbf{one or two} scores are null, they are imputed using the column median (or mean) over all courses. Alternatively, the remaining $\beta_k$ weights can be re-normalized to sum to 1.
+    \item If \textbf{all three} scores are null, they are assigned a low value to penalize the course while keeping it as a viable option:
+    \[
+        x_k^* = \gamma \cdot \min_{\text{all non-null values}} x_{j,\ell}
+    \]
+    for $k=1,2,3$, with a penalty factor $\gamma \in [0.3, 0.7]$ (e.g., $\gamma = 0.5$). For such courses, $\lambda_i$ is set to a penalty value like 0.97 to further reflect their unreliability.
+\end{itemize}
+
+\subsection{Node Weight Calculation}
+
+The final weight $y_i$ for a course is calculated as:
+\[
+    s_i = \beta_1 x_1 + \beta_2 x_2 + \beta_3 x_3
+\]
+\[
+    y_i = \min(\lambda_i s_i,\, 100)
+\]
+The $\min$ operation ensures the weight does not exceed the maximum possible score of 100.
+
+\subsection{Edge Cases}
+
+\begin{itemize}
+    \item Courses with all rating scores imputed will have a small, non-zero weight. This ensures they are only selected if no other paths are available.
+    \item If all available paths require traversing a node with imputed scores, the algorithm will still return the path with the highest possible total weight.
+\end{itemize}
+
+\section{Global Reuse Preference (Depth-Aware New-Course Penalty)}
+\label{sec:reuse-penalty}
+
+The initial objective function encourages high-weight courses but does not explicitly favor solutions that reuse courses across different prerequisite branches. To promote efficient paths, we introduce a \emph{new-course penalty}: a depth-aware cost added only when a course \emph{ID} appears in the path for the first time.
+
+\subsection{Penalty Definition}
+Let $S$ be the set of selected course IDs so far. For a course node $v$ at depth $d$ (root at $d=0$), the base cost is
+\[
+  \text{baseCost}(v) = 1 - \frac{y_v}{100}.
+\]
+A depth-aware penalty is charged only on first inclusion:
+\[
+  \text{newCoursePenalty}(v, S, d) =
+  \begin{cases}
+    \lambda(d) & v \notin S,\\
+    0 & v \in S,
+  \end{cases}
+\qquad \lambda(d) = \dfrac{\lambda_0}{1+d},\ \ \lambda_0\in[0.1,0.4] \ (\text{default }0.2).
+\]
+The node cost is then
+\[
+  \text{cost}(v, S, d) = \text{baseCost}(v) + \text{newCoursePenalty}(v, S, d).
+\]
+This is equivalent to a ``reuse award'' formulation up to a constant shift; we use the new-course penalty because it is simpler to implement and reason about.
+
+\subsection{Selection with Global Reuse}
+The recursive selection passes $(S,d)$ so that OR-branches are evaluated from the same state:
+\begin{itemize}
+  \item \textbf{Course node:} Return $(\text{cost}(v,S,d),\, S\cup\{v\})$.
+  \item \textbf{AND node:} Sum child costs and accumulate $S$ through the children.
+  \item \textbf{OR node:} For each child $C$, evaluate with the same incoming $S$ and pick the minimal-cost branch (stable tie-break by order).
+\end{itemize}
+
+\paragraph{Base-cost rule on reuse.} When a course reappears in another branch, the base cost $1-y_v/100$ and the penalty are charged \emph{only} on the first inclusion of its ID in $S$. Later reuses add zero cost. This ensures that reusing a course strictly reduces $\mathcal{C}(P)$ relative to introducing a new course, all else equal.
+
+\paragraph{Notes.}
+\begin{itemize}
+  \item The node weight $y_v$ continues to guide the selection towards user-preferred courses, while the reuse penalty refines the selection to favor more efficient paths.
+  \item The penalty schedule $\lambda_u(d)$ is a tunable hyperparameter and can be replaced by any monotonically decreasing function of depth.
+\end{itemize}
+
+\subsection{Objective Function}
+
+The overall objective is to find a valid prerequisite path $P$ that minimizes the total cost function $\mathcal{C}(P)$, which combines the base cost of courses with penalties for introducing new ones.
+\[
+\min_{P} \mathcal{C}(P) = \min_{P} \sum_{v \in P} \text{cost}(v, S_v, d_v)
+\]
+where for each node $v \in P$:
+\begin{itemize}
+    \item $d_v$ is its depth, and $S_v$ is the set of courses selected prior to visiting $v$.
+    \item $\text{cost}(v, S_v, d_v) = (1 - y_v/100) + \text{uniquePenalty}(v, S_v, d_v)$.
+\end{itemize}
+The $\mathsf{SelectSubtree}$ function acts as a recursive procedure to find the path $P$ that minimizes this sum by making locally optimal decisions at OR-nodes while propagating the global set of selected courses.
+
+\section{Illustrative Examples}
+
+\subsection{Example 1: Simple Prerequisite Tree}
+
+Consider the prerequisites for MATH249, which requires satisfying two groups of requirements: (MATH135 $\lor$ MATH145) $\land$ (MATH136 $\lor$ MATH146).
+\begin{itemize}
+    \item \textbf{Scenario 1:} If the algorithm first selects MATH135, it satisfies the first group. For the second group, if MATH136 is chosen (perhaps due to a higher weight or because MATH135 is a prerequisite), the final path is $\{\text{MATH135},\ \text{MATH136}\}$.
+    \item \textbf{Scenario 2:} If MATH145 is chosen for the first group, then MATH146 must be chosen for the second, as MATH136 typically requires MATH135. The resulting path is $\{\text{MATH145},\ \text{MATH146}\}$.
+\end{itemize}
+The algorithm selects the path with the optimal total cost, considering both course weights and dependencies.
+
+\subsection{Example 2: Complex Prerequisite Tree}
+
+The prerequisites for STAT330 involve multiple nested requirements:
+\begin{itemize}
+    \item \textbf{STAT330}: requires MATH237 $\land$ (STAT230 $\lor$ STAT240) $\land$ STAT231.
+    \item \textbf{MATH237}: requires (one of [MATH106, MATH114, MATH115, MATH136, MATH146]) $\land$ (one of [MATH128($\geq$70), MATH138($\geq$60), MATH148]).
+    \item \textbf{STAT230}: requires (one of [MATH116, MATH118, MATH128]) $\land$ (one of [MATH137($\geq$80), MATH138]).
+    \item \textbf{STAT231}: requires one of [MATH118($\geq$70), STAT220($\geq$70), STAT230].
+\end{itemize}
+A possible path that minimizes the number of unique courses could be constructed as follows:
+\begin{enumerate}
+    \item To satisfy MATH237, select MATH136 and MATH138.
+    \item To satisfy STAT230, select MATH116 and reuse the already selected MATH138.
+    \item To satisfy STAT231, reuse the now-selected STAT230.
+\end{enumerate}
+This yields the minimal path: $\{\text{MATH136},\ \text{MATH138 ($\geq$60)},\ \text{MATH116},\ \text{STAT230 ($\geq$60)},\ \text{MATH237},\ \text{STAT231}\}$. The algorithm systematically avoids redundant courses by considering the global set of selected courses.
+
+\subsection{Example 3: Node Weight Calculation}
+
+Let's calculate the weight for ACTSC431, given ratings (\texttt{liked} = 68.42, \texttt{easy} = 28.57, \texttt{useful} = 100), number of ratings = 19, and a user preference for "likeness."
+\begin{itemize}
+    \item $\boldsymbol{\beta} = (0.7, 0.15, 0.15)$.
+    \item The reliability scalar $\lambda$ is 0.9 (since $r_i=19 < 50$).
+    \item The weighted score is $s_{\mathrm{ACTSC431}} = 0.7(68.42) + 0.15(28.57) + 0.15(100) = 67.18$.
+    \item The final weight is $y_{\mathrm{ACTSC431}} = 0.9 \times 67.18 = 60.46$.
+\end{itemize}
+If a course has all null ratings, assuming a global minimum rating of 18.18 and $\gamma=0.5$:
+\begin{itemize}
+    \item The imputed scores would be $x_1=x_2=x_3=9.09$.
+    \item With $\lambda = 0.97$, the resulting weight $y_i$ would be significantly lower, correctly flagging the course as a high-risk or unknown-quality option.
+\end{itemize}
+
+\end{document}
