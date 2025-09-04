@@ -2,6 +2,10 @@
 
 Interactive UW Prereq Explorer: visualize UW course prerequisite and future-course trees, with search and ratings-weighted path recommendations. This tool helps University of Waterloo students plan their academic path by providing a clear, visual representation of complex course dependencies and suggesting optimal prerequisite pathways based on their personal preferences.
 
+## Website
+
+https://uwtree.site/
+
 ## User Flow
 
 ```mermaid
