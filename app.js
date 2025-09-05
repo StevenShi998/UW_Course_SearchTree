@@ -332,9 +332,12 @@
     // If API is reachable, prefer it and do not load any local/sample data
     const candidates = [];
     if(API_BASE) candidates.push(API_BASE);
-    // Probe common dev endpoints if none provided
+    // Probe common prod/dev endpoints if none provided
     if(!API_BASE){
-      candidates.push(""); // relative /api when a proxy exists
+      candidates.push(""); // relative /api when a proxy exists (e.g., Netlify _redirects)
+      // Direct hosted backend (Render) as an additional fallback so site works even if proxy breaks
+      candidates.push("https://uw-course-searchtree.onrender.com");
+      // Local dev
       candidates.push("http://127.0.0.1:8000");
       candidates.push("http://localhost:8000");
     }
