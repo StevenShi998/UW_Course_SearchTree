@@ -112,8 +112,8 @@ h1{
 .suggestions.visible{display:block}
 .suggestions .item{padding:10px 12px;cursor:pointer;display:flex;justify-content:space-between;gap:8px}
 .suggestions .item:hover,.suggestions .item.active{background:#f1f5f9}
-.suggestions .code{font-weight:600;color:#0f172a}
-.suggestions .title{color:#475569}
+.suggestions .code{font-weight:600;color:#0f172a;flex:0 0 auto}
+.suggestions .title{color:#475569;flex:1 1 auto;text-align:right}
 .option{
   display:flex;
   gap:8px;
