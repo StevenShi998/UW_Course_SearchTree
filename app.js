@@ -69,60 +69,6 @@
     return raw.replace(/\/$/, "");
   }
   let API_BASE = resolveApiBase();
-  let lastApiProbeAt = 0;
-  let reprobeTimer = null;
-
-  async function tryPing(base, timeoutMs){
-    try{
-      const controller = new AbortController();
-      const tid = setTimeout(()=>controller.abort(), timeoutMs);
-      const res = await fetch(`${base}/api/health`, { signal: controller.signal });
-      clearTimeout(tid);
-      return !!res.ok;
-    }catch(_){ return false; }
-  }
-
-  async function probeApiBases(candidates){
-    // Try fast path first, then a slower retry to accommodate cold TLS/connect
-    const fastTimeout = 2500;
-    const slowTimeout = 6000;
-    for(const base of candidates){
-      if(await tryPing(base, fastTimeout)) return base;
-    }
-    for(const base of candidates){
-      if(await tryPing(base, slowTimeout)) return base;
-    }
-    return null;
-  }
-
-  function ensureReprobe(candidates){
-    if(reprobeTimer) return;
-    reprobeTimer = setInterval(async ()=>{
-      const now = Date.now();
-      if(now - lastApiProbeAt < 8000) return;
-      lastApiProbeAt = now;
-      const hit = await probeApiBases(candidates);
-      if(hit){
-        API_BASE = hit;
-        apiAvailable = true;
-        statusEl.textContent = "";
-        clearInterval(reprobeTimer); reprobeTimer = null;
-        // If user is viewing a course while in local mode, refresh with API data
-        if(currentCourseId){
-          try{ await performSearch(); }catch(_){ /* ignore */ }
-        }
-      }
-    }, 10000);
-    // Also reprobe immediately on tab focus for faster recovery
-    window.addEventListener('focus', async ()=>{
-      const hit = await probeApiBases(candidates);
-      if(hit){
-        API_BASE = hit; apiAvailable = true; statusEl.textContent = "";
-        if(reprobeTimer){ clearInterval(reprobeTimer); reprobeTimer = null; }
-        if(currentCourseId){ try{ await performSearch(); }catch(_){ } }
-      }
-    }, { once: true });
-  }
 
   function isCourseNode(node){ return PathFinder.isCourseNode(node); }
 
@@ -332,25 +278,26 @@
     // If API is reachable, prefer it and do not load any local/sample data
     const candidates = [];
     if(API_BASE) candidates.push(API_BASE);
-    // Probe common prod/dev endpoints if none provided
+    // Probe common dev endpoints if none provided
     if(!API_BASE){
-      candidates.push(""); // relative /api when a proxy exists (e.g., Netlify _redirects)
-      // Direct hosted backend (Render) as an additional fallback so site works even if proxy breaks
-      candidates.push("https://uw-course-searchtree.onrender.com");
-      // Local dev
+      candidates.push(""); // relative /api when a proxy exists
       candidates.push("http://127.0.0.1:8000");
       candidates.push("http://localhost:8000");
     }
-    lastApiProbeAt = Date.now();
-    const detected = await probeApiBases(candidates);
-    if(detected){
-      API_BASE = detected;
-      apiAvailable = true;
-      statusEl.textContent = "";
-      return;
+    for(const base of candidates){
+      try{
+        const controller = new AbortController();
+        const tid = setTimeout(()=>controller.abort(), 1200);
+        const ping = await fetch(`${base}/api/health`, { signal: controller.signal });
+        clearTimeout(tid);
+        if(ping.ok){
+          API_BASE = base; // lock in discovered base
+          apiAvailable = true;
+          statusEl.textContent = "";
+          return; // use DB-backed API only
+        }
+      }catch(_){ /* try next candidate */ }
     }
-    // If none responded now, keep trying in background and inform user fallback is used
-    ensureReprobe(candidates);
     // Try to load local CSVs; otherwise fall back to a tiny built-in sample
     // Expected CSVs (optional): ./courses.csv and ./course_prereq.csv
     // headers:
@@ -423,7 +370,7 @@
     for(const c of sample.courses){ courseIdToCourse.set(normalizeCode(c.course_id), c); }
     prereqRows = sample.prereqs.slice();
     updateAllCourseCodesCache();
-    statusEl.textContent = "API unavailable right now; showing demo data until it reconnects.";
+    statusEl.textContent = "";
   }
 
   // Build reverse index: prereq -> courses that require it (for future tree)
@@ -1506,7 +1453,7 @@
         courseIdToCourse.set(query, { course_id: query });
       }
       renderTrees(query, prereqIndex, reverseIndex);
-      statusEl.textContent = "API offline → using local data";
+      statusEl.textContent = "";
       return;
     }
 
