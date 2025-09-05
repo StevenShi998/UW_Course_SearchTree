@@ -655,8 +655,9 @@
     const baseTranslateX = isFinite(minX) ? -minX : 0;
     const contentWidth = isFinite(maxX - minX) ? (maxX - minX) : nominalContentWidth;
 
-    // Draw edges
+    // Draw edges (batched)
     const drawnEdges = new Set();
+    const edgeFrag = document.createDocumentFragment();
     function drawEdges(node){
       const p = nodePos(node);
       for(const child of (node.children || [])){
@@ -674,15 +675,17 @@
           const d = `M ${startX} ${startY} L ${endX} ${endY}`;
           path.setAttribute("d", d);
           path.setAttribute("class", isFuture ? "edge-future" : "edge");
-          g.appendChild(path);
+          edgeFrag.appendChild(path);
         }
         drawEdges(child);
       }
     }
 
     drawEdges(root);
+    g.appendChild(edgeFrag);
 
-    // Draw nodes
+    // Draw nodes (batched)
+    const nodeFrag = document.createDocumentFragment();
     function drawNode(node){
       const pos = nodePos(node);
       const w = getWidth(node);
@@ -693,7 +696,7 @@
         e.preventDefault();
         navigateToCourse(node.id);
       });
-      g.appendChild(nodeGroup);
+      nodeFrag.appendChild(nodeGroup);
 
       rect(nodeGroup, pos.x, pos.y, w, NODE_HEIGHT, 8, "node");
       const label = courseIdToCourse.get(node.id)?.course_id || node.id;
@@ -703,6 +706,7 @@
     }
 
     drawNode(root);
+    g.appendChild(nodeFrag);
 
     // Resize SVG to content, and center the tree within the container width
     const width = containerWidth;
@@ -874,7 +878,7 @@
     }
     
     let iterations = 0;
-    while(iterations < 10) { // Max 10 iterations to prevent infinite loops
+    while(iterations < 5) { // Limit iterations to keep tasks short
         let changed = false;
         for(let d = 0; d <= maxDepth; d++) {
             const nodes = nodesByDepth.get(d) || [];
@@ -997,6 +1001,7 @@
     }
 
     const drawnEdges = new Set();
+    const edgesFrag = document.createDocumentFragment();
     function drawEdges(node){
       const p = nodePos(node);
 
@@ -1020,7 +1025,7 @@
       path.setAttribute("d", d);
       const highlight = currentSelection.size && (hasSelectedMap.get(child) || (isCourseNode(child) && currentSelection.has(nodeKey(child))));
       path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
-      g.appendChild(path);
+      edgesFrag.appendChild(path);
         }
         drawEdges(child);
       }
@@ -1040,7 +1045,7 @@
           e.preventDefault();
           navigateToCourse(node.id);
         });
-        g.appendChild(nodeGroup);
+        nodesFrag.appendChild(nodeGroup);
 
         const w = getWidth(node);
         const chip = rect(nodeGroup, pos.x, pos.y, w, NODE_HEIGHT, 8, "node");
@@ -1084,7 +1089,10 @@
       }
       for(const child of (node.children || [])) drawNode(child);
     }
+    const nodesFrag = document.createDocumentFragment();
     drawNode(root);
+    g.appendChild(edgesFrag);
+    g.appendChild(nodesFrag);
     const width = containerWidth;
     const height = contentMaxY + 20;
     const padding = 24;
@@ -1239,8 +1247,15 @@
           viewportRect.setAttribute('height', rectH);
       }
 
-      scrollableContainer.addEventListener('scroll', updateViewport);
-      const observer = new MutationObserver(() => updateViewport());
+      // Throttle scroll-driven updates via rAF and use passive listener
+      let __minimapRaf = 0;
+      function scheduleViewportUpdate(){
+          if(__minimapRaf) return;
+          __minimapRaf = requestAnimationFrame(()=>{ __minimapRaf = 0; updateViewport(); });
+      }
+
+      scrollableContainer.addEventListener('scroll', scheduleViewportUpdate, { passive: true });
+      const observer = new MutationObserver(() => scheduleViewportUpdate());
       observer.observe(mainSvg, { attributes: true, attributeFilter: ['viewBox'] });
       updateViewport();
   }
@@ -1282,7 +1297,7 @@
   // Suggestion logic: show only after a digit is typed (e.g., cs1)
   function shouldSuggest(q){
     // Start suggesting after at least 3 chars or once a digit appears
-    return q.length >= 3 || /\d/.test(q);
+    return q.length >= 2 || /\d/.test(q);
   }
 
   function getAllKnownCodes(){
