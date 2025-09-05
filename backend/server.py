@@ -41,7 +41,12 @@ POOL: ConnectionPool | None = None
 def init_pool_if_needed():
     global POOL
     if POOL is None:
-        POOL = ConnectionPool(conninfo=_get_dsn(), min_size=1, max_size=10)
+        POOL = ConnectionPool(
+            conninfo=_get_dsn(),
+            min_size=1,
+            max_size=10,
+            keepalives_idle=60,
+        )
 
 
 def get_db_connection():
