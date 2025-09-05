@@ -37,7 +37,7 @@ def _get_dsn() -> str:
 # Global connection pool to avoid TLS/connect latency per request
 POOL: ConnectionPool | None = None
 
-
+# send a small network probe to the database every 60 seconds if the connection is idle, so the complete tree is always showned
 def init_pool_if_needed():
     global POOL
     if POOL is None:
@@ -62,19 +62,23 @@ app = FastAPI(title="UW Course API", version="0.1.0")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO visitor_log (ip_address, path, user_agent, visited_at) VALUES (%s, %s, %s, %s)",
-                (
-                    request.client.host,
-                    request.url.path,
-                    request.headers.get("user-agent"),
-                    datetime.now(ZoneInfo("America/Toronto")).replace(tzinfo=None),
-                ),
-            )
-    # logging.info(f"Visitor from {request.client.host} for {request.url.path}")
+    # Always serve the request first; log best-effort afterwards so logging never breaks APIs
     response = await call_next(request)
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO visitor_log (ip_address, path, user_agent, visited_at) VALUES (%s, %s, %s, %s)",
+                    (
+                        request.client.host if request.client else None,
+                        request.url.path,
+                        request.headers.get("user-agent"),
+                        datetime.now(ZoneInfo("America/Toronto")).replace(tzinfo=None),
+                    ),
+                )
+    except Exception:
+        # Swallow logging errors; never impact user requests
+        pass
     return response
 
 

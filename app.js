@@ -64,7 +64,7 @@
     // support hostname:port without scheme
     if(/^[\w.-]+:\d+$/.test(raw)) return `http://${raw}`;
     // alias
-    if(/^local$/i.test(raw)) return "http://localhost:8000";
+    if(/^local$/i.test(raw)) return "http://localhost:8001";
     // already absolute or relative path
     return raw.replace(/\/$/, "");
   }
@@ -281,8 +281,8 @@
     // Probe common dev endpoints if none provided
     if(!API_BASE){
       candidates.push(""); // relative /api when a proxy exists
-      candidates.push("http://127.0.0.1:8000");
-      candidates.push("http://localhost:8000");
+      candidates.push("http://127.0.0.1:8001");
+      candidates.push("http://localhost:8001");
     }
     for(const base of candidates){
       try{
