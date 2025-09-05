@@ -41,7 +41,13 @@ POOL: ConnectionPool | None = None
 def init_pool_if_needed():
     global POOL
     if POOL is None:
+        # Create a pool with at least one ready connection to hide first-hit latency
         POOL = ConnectionPool(conninfo=_get_dsn(), min_size=1, max_size=10)
+        try:
+            POOL.open()  # pre-open so the first request doesn't do TLS + auth
+        except Exception:
+            # If open fails (e.g., network hiccup), keep lazy and retry on first use
+            pass
 
 
 def get_db_connection():
@@ -55,20 +61,37 @@ load_dotenv()  # Load .env if present
 app = FastAPI(title="UW Course API", version="0.1.0")
 
 
+@app.on_event("startup")
+def _startup_warm_pool():
+    init_pool_if_needed()
+    # Warm a connection in background so first user request is fast
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+    except Exception:
+        # Swallow at startup; health endpoint will still reflect true status
+        pass
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO visitor_log (ip_address, path, user_agent, visited_at) VALUES (%s, %s, %s, %s)",
-                (
-                    request.client.host,
-                    request.url.path,
-                    request.headers.get("user-agent"),
-                    datetime.now(ZoneInfo("America/Toronto")).replace(tzinfo=None),
-                ),
-            )
-    # logging.info(f"Visitor from {request.client.host} for {request.url.path}")
+    # Never let logging failures break user requests
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO visitor_log (ip_address, path, user_agent, visited_at) VALUES (%s, %s, %s, %s)",
+                    (
+                        request.client.host,
+                        request.url.path,
+                        request.headers.get("user-agent"),
+                        datetime.now(ZoneInfo("America/Toronto")).replace(tzinfo=None),
+                    ),
+                )
+    except Exception:
+        # logging.warning("Request logging failed", exc_info=True)
+        pass
     response = await call_next(request)
     return response
 
