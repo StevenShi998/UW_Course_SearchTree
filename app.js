@@ -283,6 +283,8 @@
       candidates.push(""); // relative /api when a proxy exists
       candidates.push("http://127.0.0.1:8001");
       candidates.push("http://localhost:8001");
+      // Final fallback to hosted backend when local API is unavailable
+      candidates.push("https://uw-course-searchtree.onrender.com");
     }
     for(const base of candidates){
       try{
