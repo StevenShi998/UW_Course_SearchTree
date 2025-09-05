@@ -70,6 +70,26 @@
   }
   let API_BASE = resolveApiBase();
 
+  async function probeApiCandidatesOnce(){
+    const candidates = [];
+    if(API_BASE) candidates.push(API_BASE);
+    if(!API_BASE){
+      candidates.push("");
+      candidates.push("http://127.0.0.1:8000");
+      candidates.push("http://localhost:8000");
+    }
+    for(const base of candidates){
+      try{
+        const controller = new AbortController();
+        const tid = setTimeout(()=>controller.abort(), 5000);
+        const ping = await fetch(`${base}/api/health`, { signal: controller.signal });
+        clearTimeout(tid);
+        if(ping.ok){ return base; }
+      }catch(_){ }
+    }
+    return null;
+  }
+
   function isCourseNode(node){ return PathFinder.isCourseNode(node); }
 
   function computeSelection(){
@@ -287,13 +307,21 @@
     for(const base of candidates){
       try{
         const controller = new AbortController();
-        const tid = setTimeout(()=>controller.abort(), 1200);
+        const tid = setTimeout(()=>controller.abort(), 8000);
         const ping = await fetch(`${base}/api/health`, { signal: controller.signal });
         clearTimeout(tid);
         if(ping.ok){
           API_BASE = base; // lock in discovered base
           apiAvailable = true;
           statusEl.textContent = "";
+          // Start a light keepalive to avoid cold TLS/session after long idle
+          try{
+            if(!window.__UW_KEEPALIVE__){
+              window.__UW_KEEPALIVE__ = setInterval(()=>{
+                fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).catch(()=>{});
+              }, 120000); // 2 minutes
+            }
+          }catch(_){ }
           return; // use DB-backed API only
         }
       }catch(_){ /* try next candidate */ }
@@ -1402,7 +1430,24 @@
       return;
     }
 
-    // Try API only if previously detected as available
+    // Try API: if not yet detected, re-probe quickly to recover from transient startup issues
+    if(!apiAvailable){
+      try{
+        const base = await probeApiCandidatesOnce();
+        if(base !== null){
+          API_BASE = base;
+          apiAvailable = true;
+          try{
+            if(!window.__UW_KEEPALIVE__){
+              window.__UW_KEEPALIVE__ = setInterval(()=>{
+                fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).catch(()=>{});
+              }, 120000);
+            }
+          }catch(_){ }
+        }
+      }catch(_){ }
+    }
+
     if(apiAvailable){
       const apiBase = API_BASE;
       try{
@@ -1416,7 +1461,10 @@
         const futureDepth = futureDepthSelect.value;
         
         const url = `${apiBase}/api/course/${encodeURIComponent(query)}/tree?prereq_depth=${prereqDepth}&future_depth=${futureDepth}`;
-        const res = await fetch(url);
+        const controller = new AbortController();
+        const tid = setTimeout(()=>controller.abort(), 10000);
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(tid);
         if(!res.ok){
           const body = await res.text().catch(()=>"");
           console.error("API error", res.status, res.statusText, body);

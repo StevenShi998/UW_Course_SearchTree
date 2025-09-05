@@ -7,6 +7,8 @@ import logging
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.background import BackgroundTask
+import asyncio
 import psycopg
 from psycopg_pool import ConnectionPool
 from dotenv import load_dotenv
@@ -36,12 +38,26 @@ def _get_dsn() -> str:
 
 # Global connection pool to avoid TLS/connect latency per request
 POOL: ConnectionPool | None = None
+_KEEPALIVE_TASK: asyncio.Task | None = None
 
 
 def init_pool_if_needed():
     global POOL
     if POOL is None:
-        POOL = ConnectionPool(conninfo=_get_dsn(), min_size=1, max_size=10)
+        # Enable TCP keepalives so idle connections stay warm across NATs/proxies
+        POOL = ConnectionPool(
+            conninfo=_get_dsn(),
+            min_size=1,
+            max_size=10,
+            kwargs={
+                "keepalives": 1,
+                "keepalives_idle": 30,
+                "keepalives_interval": 10,
+                "keepalives_count": 3,
+                "sslmode": "require",
+                "application_name": "uw_app_backend",
+            },
+        )
 
 
 def get_db_connection():
@@ -57,19 +73,32 @@ app = FastAPI(title="UW Course API", version="0.1.0")
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    with get_db_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO visitor_log (ip_address, path, user_agent, visited_at) VALUES (%s, %s, %s, %s)",
-                (
-                    request.client.host,
-                    request.url.path,
-                    request.headers.get("user-agent"),
-                    datetime.now(ZoneInfo("America/Toronto")).replace(tzinfo=None),
-                ),
-            )
-    # logging.info(f"Visitor from {request.client.host} for {request.url.path}")
+    # Let the request proceed immediately
     response = await call_next(request)
+
+    # Log in the background after the response is sent so first-hit latency
+    # (e.g. when the DB pool is warming) doesn't block the user.
+    def _write_log():
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO visitor_log (ip_address, path, user_agent, visited_at) VALUES (%s, %s, %s, %s)",
+                        (
+                            request.client.host,
+                            request.url.path,
+                            request.headers.get("user-agent"),
+                            datetime.now(ZoneInfo("America/Toronto")).replace(tzinfo=None),
+                        ),
+                    )
+        except Exception:
+            # Best-effort only; ignore failures
+            pass
+
+    try:
+        response.background = BackgroundTask(_write_log)
+    except Exception:
+        pass
     return response
 
 
@@ -91,6 +120,46 @@ def health():
         return {"status": "ok"}
     except Exception:
         raise HTTPException(status_code=503, detail="Database connection is not available")
+
+
+async def _keep_pool_warm():
+    """Periodically ping the DB so TLS/session stays hot across idle periods."""
+    while True:
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT 1")
+        except Exception:
+            # Ignore transient errors; next tick will retry
+            pass
+        await asyncio.sleep(300)  # 5 minutes
+
+
+@app.on_event("startup")
+async def _on_startup():
+    global _KEEPALIVE_TASK
+    init_pool_if_needed()
+    # Warm one connection immediately
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+    except Exception:
+        pass
+    _KEEPALIVE_TASK = asyncio.create_task(_keep_pool_warm())
+
+
+@app.on_event("shutdown")
+async def _on_shutdown():
+    global _KEEPALIVE_TASK, POOL
+    if _KEEPALIVE_TASK is not None:
+        _KEEPALIVE_TASK.cancel()
+        _KEEPALIVE_TASK = None
+    if POOL is not None:
+        try:
+            POOL.close()
+        except Exception:
+            pass
 
 
 def fetch_course(cursor, course_id: str) -> Dict:
