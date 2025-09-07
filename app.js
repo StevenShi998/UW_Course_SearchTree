@@ -41,6 +41,8 @@
   let suggestAbort = null;
   let suggestTimer = null;
   let apiAvailable = false;
+  let __apiProbeTimer = 0; // background API warmup probe
+  const __apiUpCallbacks = [];
   let prereqZoom = 1.0;
   let futureZoom = 1.0;
   let shouldAutoZoomPrereq = false;
@@ -69,6 +71,42 @@
     return raw.replace(/\/$/, "");
   }
   let API_BASE = resolveApiBase();
+
+  function whenApiAvailable(cb){
+    try{
+      if(apiAvailable){ cb && cb(); return; }
+      if(typeof cb === 'function') __apiUpCallbacks.push(cb);
+    }catch(_){ }
+  }
+
+  function startApiAvailabilityProbe(){
+    if(apiAvailable) return;
+    if(__apiProbeTimer) return;
+    let attempts = 0;
+    const tick = async () => {
+      attempts++;
+      try{
+        const base = await probeApiCandidatesOnce();
+        if(base !== null){
+          API_BASE = base;
+          apiAvailable = true;
+          try{
+            if(!window.__UW_KEEPALIVE__){
+              window.__UW_KEEPALIVE__ = setInterval(()=>{
+                fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).catch(()=>{});
+              }, 120000);
+            }
+          }catch(_){ }
+          try{ while(__apiUpCallbacks.length){ const fn = __apiUpCallbacks.shift(); try{ fn && fn(); }catch(_){ } } }catch(_){ }
+          __apiProbeTimer = 0;
+          return;
+        }
+      }catch(_){ }
+      const delay = attempts < 10 ? 100 : 5000; // fast then slow
+      __apiProbeTimer = setTimeout(tick, delay);
+    };
+    __apiProbeTimer = setTimeout(tick, 0);
+  }
 
   async function probeApiCandidatesOnce(){
     const candidates = [];
@@ -1341,7 +1379,13 @@
       return;
     }
     // Debounced backend suggestions
-    if(!apiAvailable) { suggestionsEl.classList.remove("visible"); suggestionsEl.innerHTML = ""; return; }
+    if(!apiAvailable) {
+      startApiAvailabilityProbe();
+      whenApiAvailable(()=>{ renderSuggestions(query); });
+      suggestionsEl.classList.remove("visible");
+      suggestionsEl.innerHTML = "";
+      return;
+    }
     const apiBase = API_BASE;
     if(suggestTimer){ clearTimeout(suggestTimer); }
     suggestTimer = setTimeout(()=>{
@@ -1428,6 +1472,10 @@
       lastPrereqRoot = null;
       lastFutureRoot = null;
       return;
+    }
+    if(!apiAvailable){
+      startApiAvailabilityProbe();
+      whenApiAvailable(()=>{ if(normalizeCode(currentCourseId || "") === query) performSearch(); });
     }
 
     // Try API: if not yet detected, re-probe quickly to recover from transient startup issues
@@ -1663,9 +1711,11 @@
       prefSelect.value = 'balanced';
       PathFinder.setPreference('balanced');
     }
+    if(!apiAvailable) startApiAvailabilityProbe();
     if(hash){
       currentCourseId = normalizeCode(hash);
       performSearch();
+      if(!apiAvailable) whenApiAvailable(()=>{ if(normalizeCode((location.hash || "").replace(/^#/, "")) === currentCourseId) performSearch(); });
     }
     loadSearchHistory();
   });
