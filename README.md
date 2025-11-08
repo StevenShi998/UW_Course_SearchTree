@@ -6,20 +6,33 @@ Interactive UW Prereq Explorer: visualize UW course prerequisite and future-cour
 
 https://uwtree.site/
 
-## User Flow
+## Architecture
+
+**🚀 Fully Static Site** - No backend required!
 
 ```mermaid
 %%{init: {'flowchart': {'nodeSpacing': 80, 'rankSpacing': 120}, 'themeVariables': {'fontSize': '20px'}}}%%
 flowchart TB
-  U[User types target course and submits] --> F[Frontend app.js]
-  F --> A[FastAPI backend]
-  A -->|SQL| DB[(Postgres)]
-  DB --> A
-  A --> F
+  U[User types target course] --> F[Frontend app.js]
+  F -->|Loads once| D[Static JSON Data<br/>data/courses_data.json]
+  D --> F
   F --> T[Build AND/OR prereq tree]
   T --> LP[Solve LP to pick optimal subtree]
   LP --> R[Render trees + highlight chosen path]
 ```
+
+**Benefits:**
+- ⚡ **10-100x faster** - No database queries or API calls
+- ❄️ **Zero cold starts** - Instant response times
+- 🌍 **Global CDN** - Fast worldwide with Netlify
+- 💰 **$0 hosting costs** - No backend infrastructure needed
+- 📱 **Works offline** - After initial load
+
+### Data Flow
+
+1. **One-time load**: 3.5 MB JSON file (compresses to ~500 KB with Brotli)
+2. **Browser caches**: All subsequent visits are instant
+3. **Local processing**: All tree building happens in your browser
 
 ## Optimal Course Path Selection
 
@@ -100,3 +113,163 @@ A naive algorithm might select high-weight courses that lead to an inefficient p
 -   If a course is selected for the *first time*, an additional penalty is added. This penalty decreases with the prerequisite's depth, encouraging the reuse of courses that appear in multiple branches (like reusing MATH 138 for both a STAT and a MATH prerequisite).
 
 The algorithm's objective is to find a valid path $P$ that minimizes the total cost, balancing course quality (high weight) with path efficiency (course reuse).
+
+---
+
+## Development
+
+### Local Development
+
+```bash
+# 1. Start local server
+python3 -m http.server 8080
+
+# 2. Open browser
+open http://localhost:8080
+```
+
+The site uses vanilla JavaScript - no build tools required!
+
+### Project Structure
+
+```
+uw_app/
+├── index.html          # Main HTML page
+├── app.js              # Frontend logic & tree rendering
+├── pathfinder.js       # Optimal path selection algorithm
+├── styles.css          # Styling
+├── data/
+│   └── courses_data.json  # Static course data (3.5 MB)
+├── scripts/
+│   ├── export_db_to_static.py  # Export database to JSON
+│   └── update_data.sh          # Automated update workflow
+├── scraper/
+│   ├── uwflow_scraper.py      # Scrape course data from UWFlow
+│   ├── calendar_verifier.py   # Parse prerequisites from UW Calendar
+│   └── llm_parser.py           # LLM-based prerequisite parsing
+├── backend/            # (Archived - no longer used)
+│   └── server.py       # Old FastAPI backend
+└── sql/
+    └── tables.sql      # Database schema
+```
+
+### Data Pipeline
+
+The course data flows through these stages:
+
+1. **Scraping** → `scraper/uwflow_scraper.py` + `calendar_verifier.py`
+   - Fetches course info from UWFlow
+   - Parses prerequisites from UW Course Calendar
+   - Uses LLM to parse complex prerequisite text
+   
+2. **Storage** → Neon Postgres Database
+   - Stores courses, prerequisites, ratings
+   
+3. **Export** → `scripts/export_db_to_static.py`
+   - Exports database to `data/courses_data.json`
+   
+4. **Deploy** → Git push → Netlify auto-deploys
+
+---
+
+## Updating Course Data
+
+When you want to update the course data (e.g., after scraping new data):
+
+### Quick Update
+
+```bash
+./scripts/update_data.sh
+```
+
+This script will:
+1. Export latest data from Neon database
+2. Commit the changes
+3. Ask if you want to push (triggers deployment)
+
+### Manual Update
+
+```bash
+# 1. Export data from database
+source venv/bin/activate
+python3 scripts/export_db_to_static.py
+
+# 2. Commit and push
+git add data/courses_data.json
+git commit -m "Update course data"
+git push
+```
+
+Netlify will automatically deploy the changes (~1-2 minutes).
+
+---
+
+## Deployment
+
+### Production
+
+The site is deployed on **Netlify** with automatic deployments:
+
+- **URL**: https://uwtree.site/
+- **Hosting**: Netlify (free tier)
+- **CDN**: Global edge network
+- **Auto-deploy**: Triggered by git push to main branch
+
+### Environment Variables
+
+For running scrapers and export scripts locally:
+
+Create a `.env` file:
+```bash
+NEON_URL=postgresql://user:password@host/database
+```
+
+---
+
+## Data Sources
+
+- **Course Ratings**: [UWFlow](https://uwflow.com)
+- **Prerequisites**: UW Course Calendar
+- **Database**: Neon Postgres (cloud-hosted)
+
+---
+
+## Tech Stack
+
+**Frontend (Production):**
+- Vanilla JavaScript (no frameworks!)
+- SVG for tree visualization
+- CSS3 for styling
+
+**Data Pipeline:**
+- Python 3.13
+- psycopg (PostgreSQL driver)
+- Neon Postgres Database
+- OpenAI/Perplexity LLM for prerequisite parsing
+
+**Deployment:**
+- Netlify (static hosting + CDN)
+- Git-based deployment
+
+---
+
+## Performance
+
+**Load Times:**
+- First visit: ~150-300ms (includes 500 KB data download)
+- Subsequent visits: ~50-100ms (cached)
+- Tree rendering: <100ms for most courses
+
+**Data Size:**
+- Raw JSON: 3.5 MB
+- Compressed (Brotli): ~500 KB
+- 9,360+ courses
+- 3,174 courses with prerequisites
+
+---
+
+## License & Credits
+
+**Design and Implementation:** [Steven Shi](https://github.com/StevenShi998)
+
+**Data Source:** All course data scraped from [UWFlow](https://uwflow.com)

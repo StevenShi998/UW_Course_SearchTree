@@ -1,1 +1,3 @@
-/api/*    https://uw-course-searchtree.onrender.com/api/:splat    200
+# No backend proxy needed - fully static site!
+# Old API redirect (no longer used):
+# /api/*    https://uw-course-searchtree.onrender.com/api/:splat    200

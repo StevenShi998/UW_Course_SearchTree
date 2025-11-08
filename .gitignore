@@ -27,6 +27,9 @@ ndjson/
 # CSV exports (if they are generated)
 *.csv
 
+# Static data directory - DO NOT IGNORE (needed for deployment)
+# data/
+
 note.txt
 # macOS metadata files
 ._*
