@@ -978,13 +978,20 @@
             orGroupMaxY = Math.max(orGroupMaxY, gc.y + NODE_HEIGHT);
           }
           const padding = 12;
-          const convergenceX = orGroupMinX - padding;
+          const orGroupRightEdge = orGroupMinX - padding;
           // Convergence Y is at the vertical center of the OR group
           const convergenceY = (orGroupMinY + orGroupMaxY) / 2;
           
           // Find parent of this OR group
           const parent = parentMap.get(node);
           if(parent){
+            const parentPos = nodePos(parent);
+            const parentIsJunction = (parent.id || "").startsWith("and-") || (parent.id || "").startsWith("or-") || parent.isGroup;
+            const parentStartX = parentIsJunction ? parentPos.x : (parentPos.x + 6);
+            
+            // Convergence X is halfway between OR group right edge and parent left edge
+            const convergenceX = (orGroupRightEdge + parentStartX) / 2;
+            
             orGroupConvergencePoints.set(node, { x: convergenceX, y: convergenceY });
             
             // Draw edges from each child to convergence point
