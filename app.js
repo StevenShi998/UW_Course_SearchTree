@@ -969,20 +969,22 @@
         if(bounds){
           // Calculate convergence point on the right edge of the OR group
           let orGroupMinX = Infinity;
+          let orGroupMinY = Infinity;
+          let orGroupMaxY = -Infinity;
           for(const grandchild of node.children){
             const gc = nodePos(grandchild);
             orGroupMinX = Math.min(orGroupMinX, gc.x);
+            orGroupMinY = Math.min(orGroupMinY, gc.y);
+            orGroupMaxY = Math.max(orGroupMaxY, gc.y + NODE_HEIGHT);
           }
           const padding = 12;
           const convergenceX = orGroupMinX - padding;
+          // Convergence Y is at the vertical center of the OR group
+          const convergenceY = (orGroupMinY + orGroupMaxY) / 2;
           
           // Find parent of this OR group
           const parent = parentMap.get(node);
           if(parent){
-            const parentPos = nodePos(parent);
-            const parentIsJunction = (parent.id || "").startsWith("and-") || (parent.id || "").startsWith("or-") || parent.isGroup;
-            const convergenceY = parentIsJunction ? parentPos.y + NODE_HEIGHT/2 : (parentPos.y + NODE_HEIGHT/2);
-            
             orGroupConvergencePoints.set(node, { x: convergenceX, y: convergenceY });
             
             // Draw edges from each child to convergence point
@@ -1030,14 +1032,19 @@
             if(isAndNode && orGroupSiblings.length > 1){
               // Calculate intermediate convergence point for AND
               let rightmostConvergenceX = Infinity;
+              let minConvergenceY = Infinity;
+              let maxConvergenceY = -Infinity;
               for(const orSibling of orGroupSiblings){
                 const convPt = orGroupConvergencePoints.get(orSibling);
                 if(convPt){
                   rightmostConvergenceX = Math.min(rightmostConvergenceX, convPt.x);
+                  minConvergenceY = Math.min(minConvergenceY, convPt.y);
+                  maxConvergenceY = Math.max(maxConvergenceY, convPt.y);
                 }
               }
               const intermediateX = (rightmostConvergenceX + parentStartX) / 2;
-              const intermediateY = parentStartY;
+              // Intermediate Y is at the vertical center of all OR group convergence points
+              const intermediateY = (minConvergenceY + maxConvergenceY) / 2;
               
               // Draw from this OR group's convergence to intermediate point
               const edgeKey = `converge-${node.id}->intermediate-${parent.id}`;
