@@ -1038,7 +1038,7 @@
             
             if(isAndNode && orGroupSiblings.length > 1){
               // Calculate intermediate convergence point for AND
-              // The intermediate point is at the rightmost convergence X (closest to parent)
+              // The intermediate point is halfway between rightmost convergence and parent
               // and at the vertical center of all OR group convergence Y values
               let rightmostConvergenceX = Infinity;
               let minConvergenceY = Infinity;
@@ -1051,8 +1051,8 @@
                   maxConvergenceY = Math.max(maxConvergenceY, convPt.y);
                 }
               }
-              // Intermediate X is at the rightmost (closest to parent) convergence point
-              const intermediateX = rightmostConvergenceX;
+              // Intermediate X is halfway between the rightmost convergence and parent
+              const intermediateX = (rightmostConvergenceX + parentStartX) / 2;
               // Intermediate Y is at the vertical center of all OR group convergence points
               const intermediateY = (minConvergenceY + maxConvergenceY) / 2;
               
