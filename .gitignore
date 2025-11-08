@@ -13,6 +13,9 @@ __pycache__/
 # OS-specific
 .DS_Store
 
+# IDE-specific
+.cursor/
+
 # LaTeX build files
 *.aux
 *.fdb_latexmk
