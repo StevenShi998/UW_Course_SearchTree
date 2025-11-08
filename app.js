@@ -932,22 +932,23 @@
         if(child.isGroup && child.children && child.children.length > 0){
           const childBounds = groupBounds.get(child);
           if(childBounds){
-            // Calculate convergence point: halfway between the OR group and the parent
+            // Calculate convergence point: on the RIGHT edge of the OR group container (closest to parent)
             const parentIsJunction = (node.id || "").startsWith("and-") || (node.id || "").startsWith("or-") || node.isGroup;
             const parentStartX = parentIsJunction ? p.x : (p.x + 6);
             const parentStartY = p.y + NODE_HEIGHT/2;
             
-            // Find the rightmost edge of the OR group (closest to parent)
-            // Since tree is reversed, children have larger X, so we need the maxX
-            let orGroupRightEdge = -Infinity;
+            // Find the rightmost edge of the OR group container (closest to parent)
+            // Since tree is reversed, children have larger X values, so minX is the rightmost
+            let orGroupMinX = Infinity;
             for(const grandchild of child.children){
               const gc = nodePos(grandchild);
-              const gcRightEdge = gc.x + getWidth(grandchild);
-              orGroupRightEdge = Math.max(orGroupRightEdge, gcRightEdge);
+              orGroupMinX = Math.min(orGroupMinX, gc.x);
             }
             
-            // Convergence point is at the midpoint horizontally between OR group right edge and parent, aligned with parent vertically
-            const convergenceX = (orGroupRightEdge + parentStartX) / 2;
+            // Convergence point is on the right edge of the OR group box (at minX - padding, which is rectX)
+            // We'll place it slightly outside the box for cleaner visual connection
+            const padding = 12;
+            const convergenceX = orGroupMinX - padding;
             const convergenceY = parentStartY;
             
             // Draw edges from each child of the OR group to the convergence point
@@ -969,16 +970,65 @@
               }
             }
             
-            // Draw single edge from convergence point to parent
-            const edgeKey = `converge-${child.id}->${node.id}`;
-            if(!drawnEdges.has(edgeKey)){
-              drawnEdges.add(edgeKey);
-              const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-              const d = `M ${convergenceX} ${convergenceY} L ${parentStartX} ${parentStartY}`;
-              path.setAttribute("d", d);
-              const highlight = currentSelection.size && child.children.some(gc => hasSelectedMap.get(gc) || (isCourseNode(gc) && currentSelection.has(nodeKey(gc))));
-              path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
-              edgesFrag.appendChild(path);
+            // Check if parent is AND node with multiple OR group children - need intermediate convergence
+            const isAndNode = (node.id || "").startsWith("and-");
+            const orGroupChildren = (node.children || []).filter(c => c.isGroup && c.children && c.children.length > 0);
+            const needsIntermediateConvergence = isAndNode && orGroupChildren.length > 1;
+            
+            if(needsIntermediateConvergence){
+              // Calculate intermediate convergence point for AND node
+              // Find the rightmost convergence point (closest to AND node)
+              let rightmostConvergenceX = Infinity;
+              for(const orChild of orGroupChildren){
+                let orGroupMinX = Infinity;
+                for(const grandchild of orChild.children){
+                  const gc = nodePos(grandchild);
+                  orGroupMinX = Math.min(orGroupMinX, gc.x);
+                }
+                const padding = 12;
+                const convX = orGroupMinX - padding;
+                rightmostConvergenceX = Math.min(rightmostConvergenceX, convX);
+              }
+              
+              // Intermediate convergence point is halfway between rightmost OR convergence and AND node
+              const intermediateX = (rightmostConvergenceX + parentStartX) / 2;
+              const intermediateY = parentStartY;
+              
+              // Draw edge from this OR group's convergence point to intermediate point
+              const edgeKey = `converge-${child.id}->intermediate-${node.id}`;
+              if(!drawnEdges.has(edgeKey)){
+                drawnEdges.add(edgeKey);
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                const d = `M ${convergenceX} ${convergenceY} L ${intermediateX} ${intermediateY}`;
+                path.setAttribute("d", d);
+                const highlight = currentSelection.size && child.children.some(gc => hasSelectedMap.get(gc) || (isCourseNode(gc) && currentSelection.has(nodeKey(gc))));
+                path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
+                edgesFrag.appendChild(path);
+              }
+              
+              // Draw single edge from intermediate convergence point to AND node (only once)
+              const intermediateToParentKey = `intermediate-${node.id}->${node.id}`;
+              if(!drawnEdges.has(intermediateToParentKey)){
+                drawnEdges.add(intermediateToParentKey);
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                const d = `M ${intermediateX} ${intermediateY} L ${parentStartX} ${parentStartY}`;
+                path.setAttribute("d", d);
+                const highlight = currentSelection.size && orGroupChildren.some(og => og.children.some(gc => hasSelectedMap.get(gc) || (isCourseNode(gc) && currentSelection.has(nodeKey(gc)))));
+                path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
+                edgesFrag.appendChild(path);
+              }
+            } else {
+              // Draw single edge from convergence point directly to parent
+              const edgeKey = `converge-${child.id}->${node.id}`;
+              if(!drawnEdges.has(edgeKey)){
+                drawnEdges.add(edgeKey);
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                const d = `M ${convergenceX} ${convergenceY} L ${parentStartX} ${parentStartY}`;
+                path.setAttribute("d", d);
+                const highlight = currentSelection.size && child.children.some(gc => hasSelectedMap.get(gc) || (isCourseNode(gc) && currentSelection.has(nodeKey(gc))));
+                path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
+                edgesFrag.appendChild(path);
+              }
             }
           } else {
             // Fallback: if group bounds not found, draw edges normally
