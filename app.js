@@ -97,13 +97,14 @@
   }
 
   function clearAll(){
-    // Reset state and UI
+    // Reset state and UI (but preserve loaded static data for suggestions)
     currentCourseId = null;
     lastPrereqRoot = null;
     lastFutureRoot = null;
     currentSelection = new Set();
-    courseIdToCourse = new Map();
-    prereqRows = [];
+    // Don't clear courseIdToCourse and prereqRows - they're needed for suggestions!
+    // courseIdToCourse = new Map();
+    // prereqRows = [];
     statusEl.textContent = "";
     prereqContainer.innerHTML = "";
     futureContainer.innerHTML = "";
@@ -265,35 +266,40 @@
 
   // Layout and render a lightweight tree using plain SVG
   function renderTrees(courseId, prereqIndex, reverseIndex){
-    lastPrereqRoot = buildPrereqHierarchy(courseId, prereqIndex);
+    const prereqDepth = Math.max(1, Math.min(100, Number(prereqDepthSelect.value || 99)));
+    lastPrereqRoot = buildPrereqHierarchy(courseId, prereqIndex, prereqDepth);
     renderPrereqTree(prereqContainer, lastPrereqRoot);
     const depth = Math.max(0, Math.min(4, Number(futureDepthSelect.value || 0)));
     lastFutureRoot = buildFutureHierarchy(courseId, reverseIndex, depth);
     renderSideTree(futureContainer, lastFutureRoot, true);
   }
 
-  function buildPrereqHierarchy(courseId, prereqIndex){
-    // Recursively expand prerequisites until leaves
+  function buildPrereqHierarchy(courseId, prereqIndex, maxDepth){
+    // Recursively expand prerequisites until leaves or max depth
+    // Match backend logic exactly: start at depth=0, use depth >= maxDepth
     const visited = new Set();
-    function dfs(courseInfo){
+    function dfs(courseInfo, depth){
       const id = (typeof courseInfo === 'string') ? courseInfo : courseInfo.id;
       const min_grade = (typeof courseInfo === 'object') ? courseInfo.min_grade : undefined;
 
-      if(visited.has(id)) return { id, groups: [], min_grade };
+      // Stop expanding if we've hit the depth limit or already visited
+      // Backend uses: if depth >= max_depth: return {"id": course_id, "groups": [], "min_grade": min_grade}
+      if(depth >= maxDepth || visited.has(id)) return { id, groups: [], min_grade };
       visited.add(id);
+      
       const groupsMap = prereqIndex.get(id) || new Map();
       const groups = Array.from(groupsMap.keys()).sort((a,b)=>a-b).map(k=>{
         const g = groupsMap.get(k);
         const computedType = (g.courses.length > 1) ? 'OR' : 'AND';
         return { group:k, type:computedType, courses:g.courses };
       });
-      // New: build children with junction nodes
+      // Build children with junction nodes
       const children = [];
       if(groups.length > 1){
         // Multiple AND groups: create an intermediate AND junction
         const andNode = { id: `and-${id}`, children:[] };
       for(const g of groups){
-          const orNode = { id: `or-group-${g.group}`, children: g.courses.map(c => dfs(c)), isGroup: true };
+          const orNode = { id: `or-group-${g.group}`, children: g.courses.map(c => dfs(c, depth+1)), isGroup: true };
           andNode.children.push(orNode);
         }
         children.push(andNode);
@@ -301,21 +307,47 @@
         const g = groups[0];
         if (g.courses.length > 1) {
           // Single OR group, needs a junction
-          const orNode = { id: `or-group-${g.group}`, children: g.courses.map(c => dfs(c)), isGroup: true };
+          const orNode = { id: `or-group-${g.group}`, children: g.courses.map(c => dfs(c, depth+1)), isGroup: true };
           children.push(orNode);
         } else {
           // Single course, no group node needed, just the course itself
-          children.push(...g.courses.map(c => dfs(c)));
+          children.push(...g.courses.map(c => dfs(c, depth+1)));
         }
       }
       return { id, groups, children, min_grade };
     }
-    return dfs(courseId);
+    return dfs(courseId, 0);
+  }
+
+  function prunePrereqTree(node, maxDepth){
+    // Post-process tree to remove empty groups at maxDepth boundary
+    // This matches backend behavior where nodes at depth >= maxDepth have empty groups
+    function prune(n, depth){
+      if(!n) return;
+      if(depth >= maxDepth){
+        // At maxDepth boundary, ensure groups and children are empty (backend behavior)
+        if(Array.isArray(n.groups)) n.groups = [];
+        if(Array.isArray(n.children)) n.children.length = 0;
+        return;
+      }
+      if(Array.isArray(n.children)){
+        for(let i = n.children.length - 1; i >= 0; i--){
+          const child = n.children[i];
+          prune(child, depth + 1);
+          const hasDescendants = child && Array.isArray(child.children) && child.children.length > 0;
+          const hasGroups = child && Array.isArray(child.groups) && child.groups.length > 0;
+          if(child && child.isGroup && !hasDescendants && !hasGroups){
+            n.children.splice(i, 1);
+          }
+        }
+      }
+    }
+    prune(node, 0);
   }
 
   function navigateToCourse(courseId) {
-    prereqDepthSelect.value = '2';
-    futureDepthSelect.value = '2';
+    prereqDepthSelect.value = '1';
+    futureDepthSelect.value = '1';
     prereqZoom = 1;
     futureZoom = 1;
     shouldAutoZoomPrereq = true;
@@ -427,9 +459,14 @@
   }
 
   function renderSideTree(container, root, isFuture){
+    // Preserve viewport center point for better zoom behavior
     const { scrollLeft, scrollTop, scrollWidth, clientWidth, scrollHeight, clientHeight } = container;
-    const xRatio = scrollWidth > clientWidth ? scrollLeft / (scrollWidth - clientWidth) : 0;
-    const yRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+    const viewportCenterX = scrollLeft + clientWidth / 2;
+    const viewportCenterY = scrollTop + clientHeight / 2;
+    const contentCenterX = scrollWidth / 2;
+    const contentCenterY = scrollHeight / 2;
+    const offsetX = viewportCenterX - contentCenterX;
+    const offsetY = viewportCenterY - contentCenterY;
 
     const existingSvg = container.querySelector('svg');
     if (existingSvg) existingSvg.remove();
@@ -638,16 +675,24 @@
       if (didAutoZoomFuture) {
         centerTree(container);
       } else {
-        container.scrollLeft = (container.scrollWidth - container.clientWidth) * xRatio;
-        container.scrollTop = (container.scrollHeight - container.clientHeight) * yRatio;
+        // Preserve viewport center point relative to content center
+        const newContentCenterX = container.scrollWidth / 2;
+        const newContentCenterY = container.scrollHeight / 2;
+        container.scrollLeft = Math.max(0, newContentCenterX + offsetX - container.clientWidth / 2);
+        container.scrollTop = Math.max(0, newContentCenterY + offsetY - container.clientHeight / 2);
       }
     });
   }
 
   function renderPrereqTree(container, root){
+    // Preserve viewport center point for better zoom behavior
     const { scrollLeft, scrollTop, scrollWidth, clientWidth, scrollHeight, clientHeight } = container;
-    const xRatio = scrollWidth > clientWidth ? scrollLeft / (scrollWidth - clientWidth) : 0;
-    const yRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+    const viewportCenterX = scrollLeft + clientWidth / 2;
+    const viewportCenterY = scrollTop + clientHeight / 2;
+    const contentCenterX = scrollWidth / 2;
+    const contentCenterY = scrollHeight / 2;
+    const offsetX = viewportCenterX - contentCenterX;
+    const offsetY = viewportCenterY - contentCenterY;
 
     const existingSvg = container.querySelector('svg');
     if (existingSvg) existingSvg.remove();
@@ -1017,8 +1062,16 @@
         if (didAutoZoomPrereq) {
           centerTree(container);
         } else {
-          container.scrollLeft = (container.scrollWidth - container.clientWidth) * xRatio;
-          container.scrollTop = (container.scrollHeight - container.clientHeight) * yRatio;
+          // Preserve viewport center point relative to content center
+          // Calculate offsets AFTER new content is rendered
+          const newContentCenterX = container.scrollWidth / 2;
+          const newContentCenterY = container.scrollHeight / 2;
+          // Use the stored offsets from BEFORE the render to maintain relative position
+          // But clamp to valid scroll ranges
+          const targetScrollLeft = Math.max(0, Math.min(container.scrollWidth - container.clientWidth, newContentCenterX + offsetX - container.clientWidth / 2));
+          const targetScrollTop = Math.max(0, Math.min(container.scrollHeight - container.clientHeight, newContentCenterY + offsetY - container.clientHeight / 2));
+          container.scrollLeft = targetScrollLeft;
+          container.scrollTop = targetScrollTop;
         }
     });
   }
@@ -1173,8 +1226,8 @@
 
   // Suggestion logic: show only after a digit is typed (e.g., cs1)
   function shouldSuggest(q){
-    // Start suggesting after at least 3 chars or once a digit appears
-    return q.length >= 2 || /\d/.test(q);
+    // Start suggesting from the second letter (at least 2 characters)
+    return q.length >= 2;
   }
 
   function getAllKnownCodes(){
@@ -1211,12 +1264,11 @@
             title: course.course_name || "" 
           });
         }
-        
-        // Limit results for performance
-        if(items.length >= 100) break;
       }
       
-      renderSuggestionItems(rankFuzzy(items, q));
+      // Rank and limit results after collecting all matches
+      const ranked = rankFuzzy(items, q);
+      renderSuggestionItems(ranked);
     }, 80);
   }
 
@@ -1251,6 +1303,23 @@
     // returns match score position or -1; sequential subsequence match
     text = (text || '').toUpperCase();
     q = (q || '').toUpperCase();
+    
+    // Prioritize exact prefix matches
+    if(text.startsWith(q)){
+      return 1000 + q.length; // High score for prefix matches
+    }
+    
+    // Then prioritize matches at word boundaries (e.g., "CS" in "CS246")
+    if(text.includes(q)){
+      // Check if match is at a word boundary (start of string or after non-letter)
+      const index = text.indexOf(q);
+      if(index === 0 || !/[A-Z]/.test(text[index - 1])){
+        return 500 + q.length; // Medium-high score for word boundary matches
+      }
+      return 100 + q.length; // Lower score for matches in middle of words
+    }
+    
+    // Sequential subsequence match
     let ti = 0, qi = 0, score = 0, last = -1;
     while(ti < text.length && qi < q.length){
       if(text[ti] === q[qi]){ score += last === ti-1 ? 2 : 1; last = ti; qi++; }
@@ -1260,13 +1329,13 @@
   }
 
   function rankFuzzy(items, q){
-    const scored = items.map(it => ({
-      it,
-      s: Math.max(
-        fuzzyMatch(it.code, q),
-        fuzzyMatch(it.title || '', q)
-      )
-    })).filter(x => x.s >= 0);
+    const scored = items.map(it => {
+      const codeScore = fuzzyMatch(it.code, q);
+      const titleScore = fuzzyMatch(it.title || '', q);
+      // Prioritize code matches over title matches by giving code matches 10x weight
+      const s = codeScore >= 0 ? (codeScore * 10) : (titleScore >= 0 ? titleScore : -1);
+      return { it, s };
+    }).filter(x => x.s >= 0);
     scored.sort((a,b)=> b.s - a.s || a.it.code.localeCompare(b.it.code));
     return scored.map(x => x.it);
   }
@@ -1364,17 +1433,19 @@
   });
   futureDepthSelect.addEventListener("change", () => {
     if (currentCourseId) {
-      shouldAutoZoomFuture = true;
+      shouldAutoZoomFuture = false; // Don't auto-center when user changes depth
       performSearch();
     }
   });
 
-  prereqDepthSelect.addEventListener('change', () => {
-    if (currentCourseId) {
-      shouldAutoZoomPrereq = true;
-      performSearch();
-    }
-  });
+  if(prereqDepthSelect){
+    prereqDepthSelect.addEventListener('change', () => {
+      if (currentCourseId) {
+        shouldAutoZoomPrereq = false; // Don't auto-center when user changes depth
+        performSearch();
+      }
+    });
+  }
 
   // Reflow on window resize to consume available width
   window.addEventListener("resize", ()=>{
