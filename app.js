@@ -1,8 +1,8 @@
 (function(){
   "use strict";
 
-  // Data comes from the backend API only
-
+  // Data loaded from static JSON file (exported from database)
+  
   const statusEl = document.getElementById("status");
   const prereqContainer = document.getElementById("prereq-tree");
   const futureContainer = document.getElementById("future-tree");
@@ -40,9 +40,7 @@
   let allCourseCodesCache = [];
   let suggestAbort = null;
   let suggestTimer = null;
-  let apiAvailable = false;
-  let __apiProbeTimer = 0; // background API warmup probe
-  const __apiUpCallbacks = [];
+  let staticDataLoaded = false;
   let prereqZoom = 1.0;
   let futureZoom = 1.0;
   let shouldAutoZoomPrereq = false;
@@ -57,76 +55,7 @@
   let metricsMedian = { liked: 0, easy: 0, useful: 0 };
   let metricsMin = { liked: 0, easy: 0, useful: 0 };
 
-  // Resolve API base from window/API query param with sensible defaults
-  function resolveApiBase(){
-    const raw = (window.API_BASE || new URLSearchParams(location.search).get("api") || "").trim();
-    if(!raw) return "";
-    // support forms like ":8000" → http://localhost:8000
-    if(/^:\d+$/.test(raw)) return `http://localhost${raw}`;
-    // support hostname:port without scheme
-    if(/^[\w.-]+:\d+$/.test(raw)) return `http://${raw}`;
-    // alias
-    if(/^local$/i.test(raw)) return "http://localhost:8000";
-    // already absolute or relative path
-    return raw.replace(/\/$/, "");
-  }
-  let API_BASE = resolveApiBase();
-
-  function whenApiAvailable(cb){
-    try{
-      if(apiAvailable){ cb && cb(); return; }
-      if(typeof cb === 'function') __apiUpCallbacks.push(cb);
-    }catch(_){ }
-  }
-
-  function startApiAvailabilityProbe(){
-    if(apiAvailable) return;
-    if(__apiProbeTimer) return;
-    let attempts = 0;
-    const tick = async () => {
-      attempts++;
-      try{
-        const base = await probeApiCandidatesOnce();
-        if(base !== null){
-          API_BASE = base;
-          apiAvailable = true;
-          try{
-            if(!window.__UW_KEEPALIVE__){
-              window.__UW_KEEPALIVE__ = setInterval(()=>{
-                fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).catch(()=>{});
-              }, 120000);
-            }
-          }catch(_){ }
-          try{ while(__apiUpCallbacks.length){ const fn = __apiUpCallbacks.shift(); try{ fn && fn(); }catch(_){ } } }catch(_){ }
-          __apiProbeTimer = 0;
-          return;
-        }
-      }catch(_){ }
-      const delay = attempts < 10 ? 100 : 5000; // fast then slow
-      __apiProbeTimer = setTimeout(tick, delay);
-    };
-    __apiProbeTimer = setTimeout(tick, 0);
-  }
-
-  async function probeApiCandidatesOnce(){
-    const candidates = [];
-    if(API_BASE) candidates.push(API_BASE);
-    if(!API_BASE){
-      candidates.push("");
-      candidates.push("http://127.0.0.1:8000");
-      candidates.push("http://localhost:8000");
-    }
-    for(const base of candidates){
-      try{
-        const controller = new AbortController();
-        const tid = setTimeout(()=>controller.abort(), 5000);
-        const ping = await fetch(`${base}/api/health`, { signal: controller.signal });
-        clearTimeout(tid);
-        if(ping.ok){ return base; }
-      }catch(_){ }
-    }
-    return null;
-  }
+  // Static data loaded from JSON file - no backend needed!
 
   function isCourseNode(node){ return PathFinder.isCourseNode(node); }
 
@@ -168,13 +97,14 @@
   }
 
   function clearAll(){
-    // Reset state and UI
+    // Reset state and UI (but preserve loaded static data for suggestions)
     currentCourseId = null;
     lastPrereqRoot = null;
     lastFutureRoot = null;
     currentSelection = new Set();
-    courseIdToCourse = new Map();
-    prereqRows = [];
+    // Don't clear courseIdToCourse and prereqRows - they're needed for suggestions!
+    // courseIdToCourse = new Map();
+    // prereqRows = [];
     statusEl.textContent = "";
     prereqContainer.innerHTML = "";
     futureContainer.innerHTML = "";
@@ -222,30 +152,6 @@
     });
   }
 
-  // Simple CSV loader
-  async function tryFetchText(url){
-    try{
-      const res = await fetch(url);
-      if(!res.ok) return "";
-      const text = await res.text();
-      return text || "";
-    }catch(_) {
-      return "";
-    }
-  }
-
-  function parseCSV(text){
-    if(!text) return [];
-    const lines = text.replace(/\r/g, "").split("\n").filter(Boolean);
-    if(lines.length === 0) return [];
-    const headers = lines[0].split(",").map(h=>h.trim());
-    return lines.slice(1).map(line => {
-      const cols = splitCSVLine(line);
-      const obj = {};
-      headers.forEach((h, i)=>{ obj[h] = (cols[i] ?? "").trim(); });
-      return obj;
-    });
-  }
 
   function updateAllCourseCodesCache(){
     const codes = new Set();
@@ -270,23 +176,6 @@
     allCourseCodesCache = Array.from(codes);
   }
 
-  // Splits a CSV line respecting quotes
-  function splitCSVLine(line){
-    const out = [];
-    let cur = "";
-    let inQuotes = false;
-    for(let i=0;i<line.length;i++){
-      const ch = line[i];
-      if(ch === '"'){
-        if(inQuotes && line[i+1] === '"'){ cur += '"'; i++; }
-        else { inQuotes = !inQuotes; }
-      } else if(ch === ',' && !inQuotes){
-        out.push(cur); cur = "";
-      } else { cur += ch; }
-    }
-    out.push(cur);
-    return out;
-  }
 
   // Build indexes for quick traversal
   function buildIndexes(){
@@ -311,132 +200,55 @@
     return String(text).replace(/\s+/g, "").toUpperCase();
   }
 
-  function tinySample(){
-    // Minimal realistic demo data
-    const courses = [
-      { course_id:"MATH135", title:"Algebra" },
-      { course_id:"MATH136", title:"Linear Algebra 1" },
-      { course_id:"MATH235", title:"Linear Algebra 2" },
-      { course_id:"AMATH250", title:"Intro to Differential Equations" },
-      { course_id:"AMATH251", title:"Differential Equations (Advanced)" },
-      { course_id:"AMATH351", title:"Systems of DEs" }
-    ];
-    const prereqs = [
-      { course_id:"MATH136", prereq_course_id:"MATH135", prerequisite_group:1 },
-      { course_id:"MATH235", prereq_course_id:"MATH136", prerequisite_group:1 },
-      { course_id:"AMATH250", prereq_course_id:"MATH136", prerequisite_group:1 },
-      { course_id:"AMATH251", prereq_course_id:"AMATH250", prerequisite_group:1 },
-      { course_id:"AMATH251", prereq_course_id:"MATH235", prerequisite_group:1 },
-      { course_id:"AMATH351", prereq_course_id:"AMATH251", prerequisite_group:1 }
-    ];
-    return { courses, prereqs };
-  }
 
   async function loadData(){
-    // If API is reachable, prefer it and do not load any local/sample data
-    const candidates = [];
-    if(API_BASE) candidates.push(API_BASE);
-    // Probe common dev endpoints if none provided
-    if(!API_BASE){
-      candidates.push(""); // relative /api when a proxy exists
-      candidates.push("http://127.0.0.1:8000");
-      candidates.push("http://localhost:8000");
-    }
-    for(const base of candidates){
-      try{
-        const controller = new AbortController();
-        const tid = setTimeout(()=>controller.abort(), 8000);
-        const ping = await fetch(`${base}/api/health`, { signal: controller.signal });
-        clearTimeout(tid);
-        if(ping.ok){
-          API_BASE = base; // lock in discovered base
-          apiAvailable = true;
-          statusEl.textContent = "";
-          // Start a light keepalive to avoid cold TLS/session after long idle
-          try{
-            if(!window.__UW_KEEPALIVE__){
-              window.__UW_KEEPALIVE__ = setInterval(()=>{
-                fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).catch(()=>{});
-              }, 120000); // 2 minutes
-            }
-          }catch(_){ }
-          return; // use DB-backed API only
-        }
-      }catch(_){ /* try next candidate */ }
-    }
-    // Try to load local CSVs; otherwise fall back to a tiny built-in sample
-    // Expected CSVs (optional): ./courses.csv and ./course_prereq.csv
-    // headers:
-    //  - courses.csv: course_id, course_name?, units?
-    //  - course_prereq.csv: course_id, prereq_course_id, prerequisite_group, min_grade?
-    const coursesText = await tryFetchText("./courses.csv");
-    const prereqText = await tryFetchText("./course_prereq.csv");
-
-    if(coursesText || prereqText){
-      const coursesRows = parseCSV(coursesText);
-      const prereqs = parseCSV(prereqText);
+    // Load static JSON data file (exported from database)
+    statusEl.textContent = "Loading course data...";
+    try {
+      const response = await fetch('./data/courses_data.json');
+      if (!response.ok) {
+        throw new Error(`Failed to load data: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Load courses into Map
       courseIdToCourse = new Map();
-      for(const r of coursesRows){
-        const id = normalizeCode(r.course_id || r.code || "");
-        if(!id) continue;
-        courseIdToCourse.set(id, {
-          course_id: id,
-          title: r.title || r.course_name || r.name || "",
-          units: r.units ? Number(r.units) : undefined
-        });
+      for (const [courseId, courseData] of Object.entries(data.courses)) {
+        courseIdToCourse.set(courseId, courseData);
       }
-      prereqRows = prereqs.map(r => ({
-        course_id: normalizeCode(r.course_id || r.code || ""),
-        prereq_course_id: normalizeCode(r.prereq_course_id || r.prereq || ""),
-        prerequisite_group: Number(r.prerequisite_group || r.group || 1),
-        min_grade: r.min_grade !== undefined && r.min_grade !== "" ? Number(r.min_grade) : undefined
-      })).filter(r => r.course_id && r.prereq_course_id);
+      
+      // Load prerequisites into flat array (for compatibility with existing code)
+      prereqRows = [];
+      for (const [courseId, groups] of Object.entries(data.prereqs)) {
+        for (const group of groups) {
+          for (const prereqCourse of group.courses) {
+            prereqRows.push({
+              course_id: courseId,
+              prereq_course_id: prereqCourse.course_id,
+              prerequisite_group: group.group,
+              min_grade: prereqCourse.min_grade
+            });
+          }
+        }
+      }
+      
+      // Load global metrics for weighting
+      if (data.metrics) {
+        metricsMedian = data.metrics.median || metricsMedian;
+        metricsMin = data.metrics.min || metricsMin;
+      }
+      
       updateAllCourseCodesCache();
+      staticDataLoaded = true;
       statusEl.textContent = "";
-      return;
+      
+      console.log(`✅ Loaded ${courseIdToCourse.size} courses and ${prereqRows.length} prerequisite relationships`);
+      
+    } catch (error) {
+      console.error('Error loading static data:', error);
+      statusEl.textContent = `Error loading course data: ${error.message}. Please refresh the page.`;
     }
-
-    // Fallback: support a demo file named "sample groups.csv" in the project root
-    // Format (first line may be a label like "Table 1"): course_id,prereq_course_id,prerequisite_group,min_grade,...
-    const sampleGroupsText = await tryFetchText("./sample groups.csv");
-    if(sampleGroupsText){
-      const lines = sampleGroupsText.replace(/\r/g, "").split("\n").filter(Boolean);
-      let headerIdx = lines.findIndex(l => /course_id/i.test(l) && /prereq_course_id/i.test(l));
-      if(headerIdx >= 0){
-        const headers = lines[headerIdx].split(",").map(h=>h.trim());
-        const rows = [];
-        for(let i=headerIdx+1;i<lines.length;i++){
-          const cols = splitCSVLine(lines[i]);
-          const obj = {};
-          headers.forEach((h, j)=>{ obj[h] = (cols[j] ?? "").trim(); });
-          rows.push(obj);
-        }
-        prereqRows = rows.map(r => ({
-          course_id: normalizeCode(r.course_id || r.code || ""),
-          prereq_course_id: normalizeCode(r.prereq_course_id || r.prereq || ""),
-          prerequisite_group: Number(r.prerequisite_group || r.group || 1),
-          min_grade: (r.min_grade && r.min_grade !== "NA") ? Number(r.min_grade) : undefined
-        })).filter(r => r.course_id && r.prereq_course_id);
-        // Build minimal course map from discovered ids so labels render nicely
-        courseIdToCourse = new Map();
-        const seen = new Set();
-        for(const r of prereqRows){
-          if(!seen.has(r.course_id)){ seen.add(r.course_id); courseIdToCourse.set(r.course_id, { course_id: r.course_id }); }
-          if(!seen.has(r.prereq_course_id)){ seen.add(r.prereq_course_id); courseIdToCourse.set(r.prereq_course_id, { course_id: r.prereq_course_id }); }
-        }
-        updateAllCourseCodesCache();
-        statusEl.textContent = "";
-        return;
-      }
-    }
-
-    // Built-in tiny sample so the UI always shows something when API is down
-    const sample = tinySample();
-    courseIdToCourse = new Map();
-    for(const c of sample.courses){ courseIdToCourse.set(normalizeCode(c.course_id), c); }
-    prereqRows = sample.prereqs.slice();
-    updateAllCourseCodesCache();
-    statusEl.textContent = "";
   }
 
   // Build reverse index: prereq -> courses that require it (for future tree)
@@ -454,35 +266,40 @@
 
   // Layout and render a lightweight tree using plain SVG
   function renderTrees(courseId, prereqIndex, reverseIndex){
-    lastPrereqRoot = buildPrereqHierarchy(courseId, prereqIndex);
+    const prereqDepth = Math.max(1, Math.min(100, Number(prereqDepthSelect.value || 99)));
+    lastPrereqRoot = buildPrereqHierarchy(courseId, prereqIndex, prereqDepth);
     renderPrereqTree(prereqContainer, lastPrereqRoot);
     const depth = Math.max(0, Math.min(4, Number(futureDepthSelect.value || 0)));
     lastFutureRoot = buildFutureHierarchy(courseId, reverseIndex, depth);
     renderSideTree(futureContainer, lastFutureRoot, true);
   }
 
-  function buildPrereqHierarchy(courseId, prereqIndex){
-    // Recursively expand prerequisites until leaves
+  function buildPrereqHierarchy(courseId, prereqIndex, maxDepth){
+    // Recursively expand prerequisites until leaves or max depth
+    // Match backend logic exactly: start at depth=0, use depth >= maxDepth
     const visited = new Set();
-    function dfs(courseInfo){
+    function dfs(courseInfo, depth){
       const id = (typeof courseInfo === 'string') ? courseInfo : courseInfo.id;
       const min_grade = (typeof courseInfo === 'object') ? courseInfo.min_grade : undefined;
 
-      if(visited.has(id)) return { id, groups: [], min_grade };
+      // Stop expanding if we've hit the depth limit or already visited
+      // Backend uses: if depth >= max_depth: return {"id": course_id, "groups": [], "min_grade": min_grade}
+      if(depth >= maxDepth || visited.has(id)) return { id, groups: [], min_grade };
       visited.add(id);
+      
       const groupsMap = prereqIndex.get(id) || new Map();
       const groups = Array.from(groupsMap.keys()).sort((a,b)=>a-b).map(k=>{
         const g = groupsMap.get(k);
         const computedType = (g.courses.length > 1) ? 'OR' : 'AND';
         return { group:k, type:computedType, courses:g.courses };
       });
-      // New: build children with junction nodes
+      // Build children with junction nodes
       const children = [];
       if(groups.length > 1){
         // Multiple AND groups: create an intermediate AND junction
         const andNode = { id: `and-${id}`, children:[] };
       for(const g of groups){
-          const orNode = { id: `or-group-${g.group}`, children: g.courses.map(c => dfs(c)), isGroup: true };
+          const orNode = { id: `or-group-${g.group}`, children: g.courses.map(c => dfs(c, depth+1)), isGroup: true };
           andNode.children.push(orNode);
         }
         children.push(andNode);
@@ -490,21 +307,47 @@
         const g = groups[0];
         if (g.courses.length > 1) {
           // Single OR group, needs a junction
-          const orNode = { id: `or-group-${g.group}`, children: g.courses.map(c => dfs(c)), isGroup: true };
+          const orNode = { id: `or-group-${g.group}`, children: g.courses.map(c => dfs(c, depth+1)), isGroup: true };
           children.push(orNode);
         } else {
           // Single course, no group node needed, just the course itself
-          children.push(...g.courses.map(c => dfs(c)));
+          children.push(...g.courses.map(c => dfs(c, depth+1)));
         }
       }
       return { id, groups, children, min_grade };
     }
-    return dfs(courseId);
+    return dfs(courseId, 0);
+  }
+
+  function prunePrereqTree(node, maxDepth){
+    // Post-process tree to remove empty groups at maxDepth boundary
+    // This matches backend behavior where nodes at depth >= maxDepth have empty groups
+    function prune(n, depth){
+      if(!n) return;
+      if(depth >= maxDepth){
+        // At maxDepth boundary, ensure groups and children are empty (backend behavior)
+        if(Array.isArray(n.groups)) n.groups = [];
+        if(Array.isArray(n.children)) n.children.length = 0;
+        return;
+      }
+      if(Array.isArray(n.children)){
+        for(let i = n.children.length - 1; i >= 0; i--){
+          const child = n.children[i];
+          prune(child, depth + 1);
+          const hasDescendants = child && Array.isArray(child.children) && child.children.length > 0;
+          const hasGroups = child && Array.isArray(child.groups) && child.groups.length > 0;
+          if(child && child.isGroup && !hasDescendants && !hasGroups){
+            n.children.splice(i, 1);
+          }
+        }
+      }
+    }
+    prune(node, 0);
   }
 
   function navigateToCourse(courseId) {
-    prereqDepthSelect.value = '2';
-    futureDepthSelect.value = '2';
+    prereqDepthSelect.value = '1';
+    futureDepthSelect.value = '1';
     prereqZoom = 1;
     futureZoom = 1;
     shouldAutoZoomPrereq = true;
@@ -616,9 +459,14 @@
   }
 
   function renderSideTree(container, root, isFuture){
+    // Preserve viewport center point for better zoom behavior
     const { scrollLeft, scrollTop, scrollWidth, clientWidth, scrollHeight, clientHeight } = container;
-    const xRatio = scrollWidth > clientWidth ? scrollLeft / (scrollWidth - clientWidth) : 0;
-    const yRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+    const viewportCenterX = scrollLeft + clientWidth / 2;
+    const viewportCenterY = scrollTop + clientHeight / 2;
+    const contentCenterX = scrollWidth / 2;
+    const contentCenterY = scrollHeight / 2;
+    const offsetX = viewportCenterX - contentCenterX;
+    const offsetY = viewportCenterY - contentCenterY;
 
     const existingSvg = container.querySelector('svg');
     if (existingSvg) existingSvg.remove();
@@ -827,16 +675,24 @@
       if (didAutoZoomFuture) {
         centerTree(container);
       } else {
-        container.scrollLeft = (container.scrollWidth - container.clientWidth) * xRatio;
-        container.scrollTop = (container.scrollHeight - container.clientHeight) * yRatio;
+        // Preserve viewport center point relative to content center
+        const newContentCenterX = container.scrollWidth / 2;
+        const newContentCenterY = container.scrollHeight / 2;
+        container.scrollLeft = Math.max(0, newContentCenterX + offsetX - container.clientWidth / 2);
+        container.scrollTop = Math.max(0, newContentCenterY + offsetY - container.clientHeight / 2);
       }
     });
   }
 
   function renderPrereqTree(container, root){
+    // Preserve viewport center point for better zoom behavior
     const { scrollLeft, scrollTop, scrollWidth, clientWidth, scrollHeight, clientHeight } = container;
-    const xRatio = scrollWidth > clientWidth ? scrollLeft / (scrollWidth - clientWidth) : 0;
-    const yRatio = scrollHeight > clientHeight ? scrollTop / (scrollHeight - clientHeight) : 0;
+    const viewportCenterX = scrollLeft + clientWidth / 2;
+    const viewportCenterY = scrollTop + clientHeight / 2;
+    const contentCenterX = scrollWidth / 2;
+    const contentCenterY = scrollHeight / 2;
+    const offsetX = viewportCenterX - contentCenterX;
+    const offsetY = viewportCenterY - contentCenterY;
 
     const existingSvg = container.querySelector('svg');
     if (existingSvg) existingSvg.remove();
@@ -1068,36 +924,193 @@
 
     const drawnEdges = new Set();
     const edgesFrag = document.createDocumentFragment();
+    
+    // Store convergence points for OR groups
+    const orGroupConvergencePoints = new Map();
+    
     function drawEdges(node){
       const p = nodePos(node);
 
       for(const child of (node.children || [])){
+        // Skip OR groups - they're handled by drawORGroupEdges and drawConvergenceToParent
+        if(child.isGroup && child.children && child.children.length > 0){
+          continue; // Don't draw edge to OR group, and don't recurse (handled separately)
+        }
+        
         const c = nodePos(child);
 
         const edgeKey = `${node.id}->${child.id}`;
         if(!drawnEdges.has(edgeKey)){
           drawnEdges.add(edgeKey);
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
 
           const parentIsJunction = (node.id || "").startsWith("and-") || (node.id || "").startsWith("or-") || node.isGroup;
           const childIsJunction = (child.id || "").startsWith("and-") || (child.id || "").startsWith("or-") || child.isGroup;
 
-          const startX = parentIsJunction ? p.x : (p.x + 6); // don't overlap for junction points
+          const startX = parentIsJunction ? p.x : (p.x + 6);
           const startY = p.y + NODE_HEIGHT/2;
           const endX = childIsJunction ? c.x : (c.x + getWidth(child) - 6);
           const endY = c.y + NODE_HEIGHT/2;
 
-      const d = `M ${startX} ${startY} L ${endX} ${endY}`;
-      path.setAttribute("d", d);
-      const highlight = currentSelection.size && (hasSelectedMap.get(child) || (isCourseNode(child) && currentSelection.has(nodeKey(child))));
-      path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
-      edgesFrag.appendChild(path);
+          const d = `M ${startX} ${startY} L ${endX} ${endY}`;
+          path.setAttribute("d", d);
+          const highlight = currentSelection.size && (hasSelectedMap.get(child) || (isCourseNode(child) && currentSelection.has(nodeKey(child))));
+          path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
+          edgesFrag.appendChild(path);
         }
         drawEdges(child);
       }
     }
+    
+    // First pass: draw edges from OR group children to convergence points
+    function drawORGroupEdges(node){
+      if(node.isGroup && node.children && node.children.length > 0){
+        const bounds = groupBounds.get(node);
+        if(bounds){
+          // Calculate convergence point on the right edge of the OR group
+          let orGroupMinX = Infinity;
+          let orGroupMinY = Infinity;
+          let orGroupMaxY = -Infinity;
+          for(const grandchild of node.children){
+            const gc = nodePos(grandchild);
+            orGroupMinX = Math.min(orGroupMinX, gc.x);
+            orGroupMinY = Math.min(orGroupMinY, gc.y);
+            orGroupMaxY = Math.max(orGroupMaxY, gc.y + NODE_HEIGHT);
+          }
+          const padding = 12;
+          const orGroupRightEdge = orGroupMinX - padding;
+          // Convergence Y is at the vertical center of the OR group
+          const convergenceY = (orGroupMinY + orGroupMaxY) / 2;
+          
+          // Find parent of this OR group
+          const parent = parentMap.get(node);
+          if(parent){
+            const parentPos = nodePos(parent);
+            const parentIsJunction = (parent.id || "").startsWith("and-") || (parent.id || "").startsWith("or-") || parent.isGroup;
+            const parentStartX = parentIsJunction ? parentPos.x : (parentPos.x + 6);
+            
+            // Convergence X is halfway between OR group right edge and parent left edge
+            const convergenceX = (orGroupRightEdge + parentStartX) / 2;
+            
+            orGroupConvergencePoints.set(node, { x: convergenceX, y: convergenceY });
+            
+            // Draw edges from each child to convergence point
+            for(const grandchild of node.children){
+              const gc = nodePos(grandchild);
+              const grandchildIsJunction = (grandchild.id || "").startsWith("and-") || (grandchild.id || "").startsWith("or-") || grandchild.isGroup;
+              const grandchildEndX = grandchildIsJunction ? gc.x : (gc.x + getWidth(grandchild) - 6);
+              const grandchildEndY = gc.y + NODE_HEIGHT/2;
+              
+              const edgeKey = `${grandchild.id}->converge-${node.id}`;
+              if(!drawnEdges.has(edgeKey)){
+                drawnEdges.add(edgeKey);
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                const d = `M ${grandchildEndX} ${grandchildEndY} L ${convergenceX} ${convergenceY}`;
+                path.setAttribute("d", d);
+                const highlight = currentSelection.size && (hasSelectedMap.get(grandchild) || (isCourseNode(grandchild) && currentSelection.has(nodeKey(grandchild))));
+                path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
+                edgesFrag.appendChild(path);
+              }
+            }
+          }
+        }
+      }
+      for(const child of (node.children || [])){
+        drawORGroupEdges(child);
+      }
+    }
+    
+    // Second pass: draw edges from convergence points to parents, and handle AND convergence
+    function drawConvergenceToParent(node){
+      if(node.isGroup && node.children && node.children.length > 0){
+        const convergencePoint = orGroupConvergencePoints.get(node);
+        if(convergencePoint){
+          const parent = parentMap.get(node);
+          if(parent){
+            const parentPos = nodePos(parent);
+            const parentIsJunction = (parent.id || "").startsWith("and-") || (parent.id || "").startsWith("or-") || parent.isGroup;
+            const parentStartX = parentIsJunction ? parentPos.x : (parentPos.x + 6);
+            const parentStartY = parentPos.y + NODE_HEIGHT/2;
+            
+            // Check if parent is AND node with multiple OR group children
+            const isAndNode = (parent.id || "").startsWith("and-");
+            const orGroupSiblings = (parent.children || []).filter(c => c.isGroup && c.children && c.children.length > 0);
+            
+            if(isAndNode && orGroupSiblings.length > 1){
+              // Calculate intermediate convergence point for AND
+              // The intermediate point is halfway between rightmost convergence and parent
+              // and at the vertical center of all OR group convergence Y values
+              let rightmostConvergenceX = Infinity;
+              let minConvergenceY = Infinity;
+              let maxConvergenceY = -Infinity;
+              for(const orSibling of orGroupSiblings){
+                const convPt = orGroupConvergencePoints.get(orSibling);
+                if(convPt){
+                  rightmostConvergenceX = Math.min(rightmostConvergenceX, convPt.x);
+                  minConvergenceY = Math.min(minConvergenceY, convPt.y);
+                  maxConvergenceY = Math.max(maxConvergenceY, convPt.y);
+                }
+              }
+              // Intermediate X is halfway between the rightmost convergence and parent
+              const intermediateX = (rightmostConvergenceX + parentStartX) / 2;
+              // Intermediate Y is at the vertical center of all OR group convergence points
+              const intermediateY = (minConvergenceY + maxConvergenceY) / 2;
+              
+              // Draw from this OR group's convergence to intermediate point
+              const edgeKey = `converge-${node.id}->intermediate-${parent.id}`;
+              if(!drawnEdges.has(edgeKey)){
+                drawnEdges.add(edgeKey);
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                const d = `M ${convergencePoint.x} ${convergencePoint.y} L ${intermediateX} ${intermediateY}`;
+                path.setAttribute("d", d);
+                const highlight = currentSelection.size && node.children.some(gc => hasSelectedMap.get(gc) || (isCourseNode(gc) && currentSelection.has(nodeKey(gc))));
+                path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
+                edgesFrag.appendChild(path);
+              }
+              
+              // Draw from intermediate to parent (only once)
+              const intermediateToParentKey = `intermediate-${parent.id}->${parent.id}`;
+              if(!drawnEdges.has(intermediateToParentKey)){
+                drawnEdges.add(intermediateToParentKey);
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                const d = `M ${intermediateX} ${intermediateY} L ${parentStartX} ${parentStartY}`;
+                path.setAttribute("d", d);
+                const highlight = currentSelection.size && orGroupSiblings.some(og => og.children.some(gc => hasSelectedMap.get(gc) || (isCourseNode(gc) && currentSelection.has(nodeKey(gc)))));
+                path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
+                edgesFrag.appendChild(path);
+              }
+            } else {
+              // Direct connection from convergence point to parent
+              const edgeKey = `converge-${node.id}->${parent.id}`;
+              if(!drawnEdges.has(edgeKey)){
+                drawnEdges.add(edgeKey);
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                const d = `M ${convergencePoint.x} ${convergencePoint.y} L ${parentStartX} ${parentStartY}`;
+                path.setAttribute("d", d);
+                const highlight = currentSelection.size && node.children.some(gc => hasSelectedMap.get(gc) || (isCourseNode(gc) && currentSelection.has(nodeKey(gc))));
+                path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
+                edgesFrag.appendChild(path);
+              }
+            }
+          }
+        }
+      }
+      for(const child of (node.children || [])){
+        drawConvergenceToParent(child);
+      }
+    }
+    
     hasSelectedMap.clear();
     markHasSelected(root);
+    
+    // Draw OR group edges first
+    drawORGroupEdges(root);
+    
+    // Draw convergence to parent edges
+    drawConvergenceToParent(root);
+    
+    // Draw remaining normal edges (non-OR-group connections)
+    // Note: drawEdges skips OR groups since they're handled above
     drawEdges(root);
     function drawNode(node){
       const isJunction = (node.id || "").startsWith("and-") || (node.id || "").startsWith("or-");
@@ -1206,8 +1219,16 @@
         if (didAutoZoomPrereq) {
           centerTree(container);
         } else {
-          container.scrollLeft = (container.scrollWidth - container.clientWidth) * xRatio;
-          container.scrollTop = (container.scrollHeight - container.clientHeight) * yRatio;
+          // Preserve viewport center point relative to content center
+          // Calculate offsets AFTER new content is rendered
+          const newContentCenterX = container.scrollWidth / 2;
+          const newContentCenterY = container.scrollHeight / 2;
+          // Use the stored offsets from BEFORE the render to maintain relative position
+          // But clamp to valid scroll ranges
+          const targetScrollLeft = Math.max(0, Math.min(container.scrollWidth - container.clientWidth, newContentCenterX + offsetX - container.clientWidth / 2));
+          const targetScrollTop = Math.max(0, Math.min(container.scrollHeight - container.clientHeight, newContentCenterY + offsetY - container.clientHeight / 2));
+          container.scrollLeft = targetScrollLeft;
+          container.scrollTop = targetScrollTop;
         }
     });
   }
@@ -1362,8 +1383,8 @@
 
   // Suggestion logic: show only after a digit is typed (e.g., cs1)
   function shouldSuggest(q){
-    // Start suggesting after at least 3 chars or once a digit appears
-    return q.length >= 2 || /\d/.test(q);
+    // Start suggesting from the second letter (at least 2 characters)
+    return q.length >= 2;
   }
 
   function getAllKnownCodes(){
@@ -1378,32 +1399,35 @@
       suggestionIndex = -1;
       return;
     }
-    // Debounced backend suggestions
-    if(!apiAvailable) {
-      startApiAvailabilityProbe();
-      whenApiAvailable(()=>{ renderSuggestions(query); });
-      suggestionsEl.classList.remove("visible");
-      suggestionsEl.innerHTML = "";
-      return;
+    
+    // Use static data for suggestions
+    if(!staticDataLoaded){
+      return; // Wait for data to load
     }
-    const apiBase = API_BASE;
+    
+    // Debounce for better performance
     if(suggestTimer){ clearTimeout(suggestTimer); }
     suggestTimer = setTimeout(()=>{
-      if(suggestAbort){ suggestAbort.abort(); }
-      suggestAbort = new AbortController();
-      const signal = suggestAbort.signal;
-      fetch(`${apiBase}/api/courses/suggest?q=${encodeURIComponent(q)}&limit=40`, { signal })
-        .then(res => res.ok ? res.json() : Promise.reject())
-        .then(data => {
-          if(signal.aborted) return;
-          const items = (data.items || []).map(it => ({ code: String(it.course_id).toUpperCase(), title: it.course_name || "" }));
-          renderSuggestionItems(rankFuzzy(items, q));
-        })
-        .catch(()=>{ /* DB-only mode: no local fallback */ });
-    }, 120);
+      // Build suggestion list from static data
+      const items = [];
+      for(const [courseId, course] of courseIdToCourse.entries()){
+        const code = courseId.toUpperCase();
+        const name = (course.course_name || "").toUpperCase();
+        
+        // Match on code or name
+        if(code.includes(q) || name.includes(q)){
+          items.push({ 
+            code: courseId, 
+            title: course.course_name || "" 
+          });
+        }
+      }
+      
+      // Rank and limit results after collecting all matches
+      const ranked = rankFuzzy(items, q);
+      renderSuggestionItems(ranked);
+    }, 80);
   }
-
-  function renderLocalSuggestions(_q){ /* disabled */ }
 
   function renderSuggestionItems(items){
     if(!items || items.length === 0){ suggestionsEl.classList.remove("visible"); suggestionsEl.innerHTML = ""; suggestionIndex = -1; return; }
@@ -1436,6 +1460,23 @@
     // returns match score position or -1; sequential subsequence match
     text = (text || '').toUpperCase();
     q = (q || '').toUpperCase();
+    
+    // Prioritize exact prefix matches
+    if(text.startsWith(q)){
+      return 1000 + q.length; // High score for prefix matches
+    }
+    
+    // Then prioritize matches at word boundaries (e.g., "CS" in "CS246")
+    if(text.includes(q)){
+      // Check if match is at a word boundary (start of string or after non-letter)
+      const index = text.indexOf(q);
+      if(index === 0 || !/[A-Z]/.test(text[index - 1])){
+        return 500 + q.length; // Medium-high score for word boundary matches
+      }
+      return 100 + q.length; // Lower score for matches in middle of words
+    }
+    
+    // Sequential subsequence match
     let ti = 0, qi = 0, score = 0, last = -1;
     while(ti < text.length && qi < q.length){
       if(text[ti] === q[qi]){ score += last === ti-1 ? 2 : 1; last = ti; qi++; }
@@ -1445,13 +1486,13 @@
   }
 
   function rankFuzzy(items, q){
-    const scored = items.map(it => ({
-      it,
-      s: Math.max(
-        fuzzyMatch(it.code, q),
-        fuzzyMatch(it.title || '', q)
-      )
-    })).filter(x => x.s >= 0);
+    const scored = items.map(it => {
+      const codeScore = fuzzyMatch(it.code, q);
+      const titleScore = fuzzyMatch(it.title || '', q);
+      // Prioritize code matches over title matches by giving code matches 10x weight
+      const s = codeScore >= 0 ? (codeScore * 10) : (titleScore >= 0 ? titleScore : -1);
+      return { it, s };
+    }).filter(x => x.s >= 0);
     scored.sort((a,b)=> b.s - a.s || a.it.code.localeCompare(b.it.code));
     return scored.map(x => x.it);
   }
@@ -1473,105 +1514,46 @@
       lastFutureRoot = null;
       return;
     }
-    if(!apiAvailable){
-      startApiAvailabilityProbe();
-      whenApiAvailable(()=>{ if(normalizeCode(currentCourseId || "") === query) performSearch(); });
+
+    // Ensure data is loaded
+    if(!staticDataLoaded){
+      statusEl.textContent = "Loading data, please wait...";
+      await loadData();
     }
 
-    // Try API: if not yet detected, re-probe quickly to recover from transient startup issues
-    if(!apiAvailable){
-      try{
-        const base = await probeApiCandidatesOnce();
-        if(base !== null){
-          API_BASE = base;
-          apiAvailable = true;
-          try{
-            if(!window.__UW_KEEPALIVE__){
-              window.__UW_KEEPALIVE__ = setInterval(()=>{
-                fetch(`${API_BASE}/api/health`, { cache: 'no-store' }).catch(()=>{});
-              }, 120000);
-            }
-          }catch(_){ }
-        }
-      }catch(_){ }
-    }
+    // Clear previous drawings while loading
+    prereqContainer.innerHTML = "";
+    futureContainer.innerHTML = "";
+    lastPrereqRoot = null; 
+    lastFutureRoot = null;
+    statusEl.textContent = "Building tree...";
 
-    if(apiAvailable){
-      const apiBase = API_BASE;
-      try{
-        // Clear previous drawings while loading
-        prereqContainer.innerHTML = "";
-        futureContainer.innerHTML = "";
-        lastPrereqRoot = null; lastFutureRoot = null;
-        statusEl.textContent = "Loading...";
-
-        const prereqDepth = prereqDepthSelect.value;
-        const futureDepth = futureDepthSelect.value;
-        
-        const url = `${apiBase}/api/course/${encodeURIComponent(query)}/tree?prereq_depth=${prereqDepth}&future_depth=${futureDepth}`;
-        const controller = new AbortController();
-        const tid = setTimeout(()=>controller.abort(), 10000);
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(tid);
-        if(!res.ok){
-          const body = await res.text().catch(()=>"");
-          console.error("API error", res.status, res.statusText, body);
-          statusEl.textContent = `API error ${res.status} ${res.statusText} for ${query}`;
-        } else {
-          let data = null;
-          try { data = await res.json(); } catch(err) { data = null; console.error("Parse JSON failed:", err); }
-          if(data && data.prereq_tree){
-            const course = data.course || { course_id: query };
-            courseIdToCourse.set(normalizeCode(course.course_id), course);
-            // Merge metrics from backend
-            const metricsMap = data.course_metrics || {};
-            for(const [cid, m] of Object.entries(metricsMap)){
-              const id = normalizeCode(cid);
-              const existing = courseIdToCourse.get(id) || { course_id: id };
-              existing.liked = m && typeof m.liked === 'number' ? m.liked : existing.liked;
-              existing.easy = m && typeof m.easy === 'number' ? m.easy : existing.easy;
-              existing.useful = m && typeof m.useful === 'number' ? m.useful : existing.useful;
-              existing.ratings = m && typeof m.rating_num === 'number' ? m.rating_num : existing.ratings;
-              courseIdToCourse.set(id, existing);
-            }
-            metricsMedian = data.metrics_median || metricsMedian;
-            metricsMin = data.metrics_min || metricsMin;
-            lastPrereqRoot = transformApiTreeToRenderableTree(data.prereq_tree);
-            lastFutureRoot = data.future_tree || { id: query, children: [] };
-            updateAllCourseCodesCache();
-            // Compute selection for current preference
-            PathFinder.updateMetrics({ median: metricsMedian, min: metricsMin });
-            PathFinder.setPreference((prefSelect && prefSelect.value) || 'balanced');
-            computeSelection();
-            renderPrereqTree(prereqContainer, lastPrereqRoot);
-            renderSideTree(futureContainer, lastFutureRoot, true);
-            statusEl.textContent = "";
-            return;
-          }
-        }
-      }catch(e){
-        console.error("Fetch failed:", e);
-        // fall through to local fallback below
-      }
-    }
-
-    // API unavailable or not found: try local in-memory data (only if API not available)
-    if(!apiAvailable && prereqRows.length){
-      const prereqIndex = buildIndexes();
-      const reverseIndex = buildReverseIndex();
-      // Seed course map with the query if missing
-      if(!courseIdToCourse.has(query)){
-        courseIdToCourse.set(query, { course_id: query });
-      }
-      renderTrees(query, prereqIndex, reverseIndex);
-      statusEl.textContent = "";
+    // Check if course exists in our data
+    if(!courseIdToCourse.has(query)){
+      statusEl.textContent = `Course not found: ${query}`;
       return;
     }
 
-    // No local data either → show message
-    prereqContainer.innerHTML = "";
-    futureContainer.innerHTML = "";
-    statusEl.textContent = `Course not found or API unavailable for: ${query}`;
+    // Build trees from static data
+    const prereqIndex = buildIndexes();
+    const reverseIndex = buildReverseIndex();
+    
+    // Update PathFinder with our static metrics
+    PathFinder.updateMetrics({ median: metricsMedian, min: metricsMin });
+    PathFinder.setPreference((prefSelect && prefSelect.value) || 'balanced');
+    
+    // Render the trees
+    renderTrees(query, prereqIndex, reverseIndex);
+    
+    // Compute optimal path selection
+    computeSelection();
+    
+    // Re-render with selection highlighted
+    if(lastPrereqRoot){ 
+      renderPrereqTree(prereqContainer, lastPrereqRoot); 
+    }
+    
+    statusEl.textContent = "";
   }
 
   searchBtn.addEventListener("click", () => navigateToCourse(courseInput.value));
@@ -1608,17 +1590,19 @@
   });
   futureDepthSelect.addEventListener("change", () => {
     if (currentCourseId) {
-      shouldAutoZoomFuture = true;
+      shouldAutoZoomFuture = false; // Don't auto-center when user changes depth
       performSearch();
     }
   });
 
-  prereqDepthSelect.addEventListener('change', () => {
-    if (currentCourseId) {
-      shouldAutoZoomPrereq = true;
-      performSearch();
-    }
-  });
+  if(prereqDepthSelect){
+    prereqDepthSelect.addEventListener('change', () => {
+      if (currentCourseId) {
+        shouldAutoZoomPrereq = false; // Don't auto-center when user changes depth
+        performSearch();
+      }
+    });
+  }
 
   // Reflow on window resize to consume available width
   window.addEventListener("resize", ()=>{
@@ -1702,7 +1686,7 @@
     performSearch();
   });
 
-  // Init
+  // Init - load static data and start app
   loadData().then(()=>{
     // prefill from hash if present
     const hash = (location.hash || "").replace(/^#/, "").trim();
@@ -1711,11 +1695,9 @@
       prefSelect.value = 'balanced';
       PathFinder.setPreference('balanced');
     }
-    if(!apiAvailable) startApiAvailabilityProbe();
     if(hash){
       currentCourseId = normalizeCode(hash);
       performSearch();
-      if(!apiAvailable) whenApiAvailable(()=>{ if(normalizeCode((location.hash || "").replace(/^#/, "")) === currentCourseId) performSearch(); });
     }
     loadSearchHistory();
   });
