@@ -281,10 +281,16 @@
     function dfs(courseInfo, depth){
       const id = (typeof courseInfo === 'string') ? courseInfo : courseInfo.id;
       const min_grade = (typeof courseInfo === 'object') ? courseInfo.min_grade : undefined;
+      
+      // Assign unique uid to each node instance
+      const uid = (function(){
+        if(!window.__NODE_UID__) window.__NODE_UID__ = 1;
+        return window.__NODE_UID__++;
+      })();
 
       // Stop expanding if we've hit the depth limit or already visited
-      // Backend uses: if depth >= max_depth: return {"id": course_id, "groups": [], "min_grade": min_grade}
-      if(depth >= maxDepth || visited.has(id)) return { id, groups: [], min_grade };
+      // Backend uses: if depth >= max_depth: return {"id": course_id, "groups": [], "min_grade": min_grade, "uid": uid}
+      if(depth >= maxDepth || visited.has(id)) return { id, groups: [], min_grade, uid };
       visited.add(id);
       
       const groupsMap = prereqIndex.get(id) || new Map();
@@ -297,9 +303,17 @@
       const children = [];
       if(groups.length > 1){
         // Multiple AND groups: create an intermediate AND junction
-        const andNode = { id: `and-${id}`, children:[] };
+        const andUid = (function(){
+          if(!window.__NODE_UID__) window.__NODE_UID__ = 1;
+          return window.__NODE_UID__++;
+        })();
+        const andNode = { id: `and-${id}`, uid: andUid, children:[] };
       for(const g of groups){
-          const orNode = { id: `or-group-${g.group}`, children: g.courses.map(c => dfs(c, depth+1)), isGroup: true };
+          const orUid = (function(){
+            if(!window.__NODE_UID__) window.__NODE_UID__ = 1;
+            return window.__NODE_UID__++;
+          })();
+          const orNode = { id: `or-group-${g.group}`, uid: orUid, children: g.courses.map(c => dfs(c, depth+1)), isGroup: true };
           andNode.children.push(orNode);
         }
         children.push(andNode);
@@ -307,14 +321,18 @@
         const g = groups[0];
         if (g.courses.length > 1) {
           // Single OR group, needs a junction
-          const orNode = { id: `or-group-${g.group}`, children: g.courses.map(c => dfs(c, depth+1)), isGroup: true };
+          const orUid = (function(){
+            if(!window.__NODE_UID__) window.__NODE_UID__ = 1;
+            return window.__NODE_UID__++;
+          })();
+          const orNode = { id: `or-group-${g.group}`, uid: orUid, children: g.courses.map(c => dfs(c, depth+1)), isGroup: true };
           children.push(orNode);
         } else {
           // Single course, no group node needed, just the course itself
           children.push(...g.courses.map(c => dfs(c, depth+1)));
         }
       }
-      return { id, groups, children, min_grade };
+      return { id, uid, groups, children, min_grade };
     }
     return dfs(courseId, 0);
   }
@@ -934,12 +952,16 @@
       for(const child of (node.children || [])){
         // Skip OR groups - they're handled by drawORGroupEdges and drawConvergenceToParent
         if(child.isGroup && child.children && child.children.length > 0){
-          continue; // Don't draw edge to OR group, and don't recurse (handled separately)
+          // Don't draw edge to OR group itself, but DO recurse into its children to handle deeper levels
+          for(const grandchild of (child.children || [])){
+            drawEdges(grandchild);
+          }
+          continue;
         }
         
         const c = nodePos(child);
 
-        const edgeKey = `${node.id}->${child.id}`;
+        const edgeKey = `${nodeKey(node)}->${nodeKey(child)}`;
         if(!drawnEdges.has(edgeKey)){
           drawnEdges.add(edgeKey);
           const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1001,7 +1023,7 @@
               const grandchildEndX = grandchildIsJunction ? gc.x : (gc.x + getWidth(grandchild) - 6);
               const grandchildEndY = gc.y + NODE_HEIGHT/2;
               
-              const edgeKey = `${grandchild.id}->converge-${node.id}`;
+              const edgeKey = `${nodeKey(grandchild)}->converge-${nodeKey(node)}`;
               if(!drawnEdges.has(edgeKey)){
                 drawnEdges.add(edgeKey);
                 const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1011,12 +1033,17 @@
                 path.setAttribute("class", highlight ? "edge highlight-edge" : "edge");
                 edgesFrag.appendChild(path);
               }
+              
+              // Recurse into grandchild's descendants to handle deeper prerequisites
+              drawORGroupEdges(grandchild);
             }
           }
         }
-      }
-      for(const child of (node.children || [])){
-        drawORGroupEdges(child);
+      } else {
+        // Not an OR group, recurse into children
+        for(const child of (node.children || [])){
+          drawORGroupEdges(child);
+        }
       }
     }
     
@@ -1057,7 +1084,7 @@
               const intermediateY = (minConvergenceY + maxConvergenceY) / 2;
               
               // Draw from this OR group's convergence to intermediate point
-              const edgeKey = `converge-${node.id}->intermediate-${parent.id}`;
+              const edgeKey = `converge-${nodeKey(node)}->intermediate-${nodeKey(parent)}`;
               if(!drawnEdges.has(edgeKey)){
                 drawnEdges.add(edgeKey);
                 const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -1081,7 +1108,7 @@
               }
             } else {
               // Direct connection from convergence point to parent
-              const edgeKey = `converge-${node.id}->${parent.id}`;
+              const edgeKey = `converge-${nodeKey(node)}->${nodeKey(parent)}`;
               if(!drawnEdges.has(edgeKey)){
                 drawnEdges.add(edgeKey);
                 const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
