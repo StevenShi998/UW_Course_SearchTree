@@ -35,6 +35,9 @@ ndjson/
 
 note.txt
 HOW_TO_UPDATE_DATA.md
+DEPLOYMENT_READY.md
+MIGRATION_TO_STATIC.md
+
 # macOS metadata files
 ._*
 
